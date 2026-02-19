@@ -117,10 +117,16 @@
         }
 
         async function fetchData(showMsg) {
-            const r = await fetch('https://bengal-tiger-admin-production-8071.up.railway.app/api/devices');
-            devices = await r.json();
-            render();
-            if(showMsg) toast("✅ Refresh Successful!");
+            try {
+                const r = await fetch('https://bengal-tiger-admin-production-8071.up.railway.app/api/devices');
+                if (!r.ok) throw new Error('Network response was not ok: ' + r.status);
+                devices = await r.json();
+                render();
+                if (showMsg) toast("✅ Refresh Successful!");
+            } catch (err) {
+                console.error('Fetch devices failed', err);
+                toast('❌ Refresh failed', true);
+            }
         }
 
         socket.on('dashboard-update', () => fetchData(false));
