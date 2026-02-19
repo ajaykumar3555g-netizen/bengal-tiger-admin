@@ -3,8 +3,7 @@ const mongoose = require('mongoose');
 const cors = require('cors'); // यह बहुत ज़रूरी है!
 const path = require('path');
 const http = require('http');
-const { Server } = require('socket.io');
-
+const { Server } = require('socket.io');const WebSocket = require('ws');
 const app = express();
 
 // Middleware
@@ -111,6 +110,35 @@ app.get('/', (req, res) => {
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: '*' } });
 global.io = io;
+
+// Create WebSocket Server and attach to HTTP server for raw WebSocket connections
+const wss = new WebSocket.Server({ server });
+
+// Handle WebSocket connections for Android app
+wss.on('connection', (ws) => {
+    console.log('📱 WebSocket connected from Android app');
+    
+    ws.on('message', (message) => {
+        console.log('📨 WebSocket message received:', message);
+        // Broadcast to all connected clients
+        wss.clients.forEach((client) => {
+            if (client.readyState === WebSocket.OPEN) {
+                client.send(JSON.stringify({ 
+                    status: 'ok',
+                    message: 'Message received'
+                }));
+            }
+        });
+    });
+    
+    ws.on('close', () => {
+        console.log('📱 WebSocket disconnected');
+    });
+    
+    ws.on('error', (error) => {
+        console.error('❌ WebSocket error:', error);
+    });
+});
 
 io.on('connection', (socket) => {
     console.log('⚡ Socket connected:', socket.id);
