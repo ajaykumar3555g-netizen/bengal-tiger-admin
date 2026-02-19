@@ -106,7 +106,7 @@
             const p = document.getElementById('pass').value;
             const r = await fetch('https://bengal-tiger-admin-production-8071.up.railway.app/api/login', {
                 method:'POST', headers:{'Content-Type':'application/json'},
-                body: JSON.stringify({password:p})
+                body: JSON.stringify({ username: 'admin', password: p })
             });
             const d = await r.json();
             if(d.success) {
