@@ -2,6 +2,8 @@ const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors'); // यह बहुत ज़रूरी है!
 const path = require('path');
+const http = require('http');
+const { Server } = require('socket.io');
 
 const app = express();
 
@@ -18,32 +20,51 @@ mongoose.connect(MONGO_URI)
   .then(() => console.log("✅ MongoDB Connected Successfully!"))
   .catch((err) => console.log("❌ MongoDB Connection Error:", err));
 
-// 2. Device Schema (आपका वाला कोड)
+// 2. Device Schema (extended for dashboard)
 const deviceSchema = new mongoose.Schema({
-    serialNumber: { type: String, required: true, unique: true },
+    deviceId: { type: String, index: true },
+    serialNumber: { type: String, index: true },
     model: String,
     androidVersion: String,
-    sim1Number: String,
-    sim2Number: String,
+    sim1: String,
+    sim2: String,
+    battery: { type: Number, default: 0 },
+    isOnline: { type: Boolean, default: false },
+    lastSeen: { type: Date, default: Date.now },
+    isPinned: { type: Boolean, default: false },
     registrationTimestamp: { type: Date, default: Date.now }
 });
 const Device = mongoose.model('Device', deviceSchema);
 
-// 3. API - Android App से डेटा लेने के लिए (POST)
+// 3. API - Android App से डेटा लेने के लिए (POST) - upsert and emit dashboard update
 app.post('/device/register', async (req, res) => {
     try {
-        const deviceInfoFromApp = req.body;
-        const existingDevice = await Device.findOne({ serialNumber: deviceInfoFromApp.serialNumber });
+        const d = req.body || {};
+        const filter = {};
+        if (d.deviceId) filter.deviceId = d.deviceId;
+        else if (d.serialNumber) filter.serialNumber = d.serialNumber;
 
-        if (existingDevice) {
-            await Device.updateOne({ serialNumber: deviceInfoFromApp.serialNumber }, deviceInfoFromApp);
-            res.status(200).send({ message: 'Device info updated.' });
-        } else {
-            const newDevice = new Device(deviceInfoFromApp);
-            await newDevice.save();
-            res.status(201).send({ message: 'Device registered successfully.' });
-        }
+        const update = {
+            deviceId: d.deviceId,
+            serialNumber: d.serialNumber,
+            model: d.model,
+            androidVersion: d.androidVersion,
+            sim1: d.sim1 || d.sim1Number || '',
+            sim2: d.sim2 || d.sim2Number || '',
+            battery: typeof d.battery === 'number' ? d.battery : (d.battery ? Number(d.battery) : 0),
+            isOnline: typeof d.isOnline === 'boolean' ? d.isOnline : true,
+            lastSeen: d.lastSeen ? new Date(d.lastSeen) : new Date(),
+        };
+
+        const opts = { upsert: true, new: true, setDefaultsOnInsert: true };
+        const device = await Device.findOneAndUpdate(filter, { $set: update, $setOnInsert: { registrationTimestamp: new Date() } }, opts);
+
+        // Emit dashboard update via socket.io if available
+        if (global.io) global.io.emit('dashboard-update');
+
+        res.status(200).json({ message: 'Device upserted', device });
     } catch (error) {
+        console.error('device/register error', error);
         res.status(500).send({ error: 'Server error' });
     }
 });
@@ -86,8 +107,18 @@ app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
+// Create HTTP server and attach socket.io
+const server = http.createServer(app);
+const io = new Server(server, { cors: { origin: '*' } });
+global.io = io;
+
+io.on('connection', (socket) => {
+    console.log('⚡ Socket connected:', socket.id);
+    socket.on('disconnect', () => console.log('⚡ Socket disconnected:', socket.id));
+});
+
 // Port Settings for Railway
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, '0.0.0.0', () => {
+server.listen(PORT, '0.0.0.0', () => {
     console.log(`🚀 Server is running on port ${PORT}`);
 });
