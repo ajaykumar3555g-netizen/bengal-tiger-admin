@@ -1,12 +1,16 @@
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors'); // यह बहुत ज़रूरी है!
+const path = require('path');
 
 const app = express();
 
 // Middleware
 app.use(express.json());
 app.use(cors()); // यह बटन्स को काम करने देगा और Error हटाएगा
+
+// Serve static files from the `public` folder (CSS/JS/images)
+app.use(express.static(path.join(__dirname, 'public')));
 
 // 1. MongoDB Connection
 const MONGO_URI = process.env.MONGO_URI; 
@@ -66,7 +70,7 @@ app.post('/api/login', (req, res) => {
 
 // 6. Root Route (चेक करने के लिए कि सर्वर चल रहा है या नहीं)
 app.get('/', (req, res) => {
-    res.send("Bengal Tiger Server is Running...");
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
 // Port Settings for Railway
