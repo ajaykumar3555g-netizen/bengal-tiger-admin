@@ -122,60 +122,97 @@ const wss = new WebSocket.Server({
 wss.on('connection', (ws) => {
     console.log('📱 WebSocket connected from Android app');
     
-    // Emit dashboard update when device connects
-    if (global.io) {
-        global.io.emit('dashboard-update', { 
-            event: 'device-connected',
-            timestamp: new Date()
-        });
-        console.log('📊 Dashboard update emitted for new device connection');
-    }
+    let deviceId = null;
     
-    ws.on('message', (message) => {
+    ws.on('message', async (message) => {
         try {
             console.log('📨 WebSocket message received:', message);
             
-            // Parse incoming data and emit dashboard update
-            try {
-                const data = JSON.parse(message);
-                if (data.deviceId || data.serialNumber) {
-                    if (global.io) {
-                        global.io.emit('dashboard-update', { 
-                            event: 'device-data-update',
-                            device: data,
-                            timestamp: new Date()
-                        });
-                        console.log('📊 Dashboard update emitted for device data');
-                    }
+            // Parse incoming device data
+            const data = JSON.parse(message);
+            
+            // Save device data to database if it contains device information
+            if (data.deviceId || data.serialNumber) {
+                deviceId = data.deviceId;
+                
+                const filter = {};
+                if (data.deviceId) filter.deviceId = data.deviceId;
+                else if (data.serialNumber) filter.serialNumber = data.serialNumber;
+
+                const update = {
+                    deviceId: data.deviceId,
+                    serialNumber: data.serialNumber,
+                    model: data.model,
+                    androidVersion: data.androidVersion,
+                    sim1: data.sim1 || data.sim1Number || '',
+                    sim2: data.sim2 || data.sim2Number || '',
+                    battery: typeof data.battery === 'number' ? data.battery : (data.battery ? Number(data.battery) : 0),
+                    isOnline: true,
+                    lastSeen: new Date(),
+                };
+
+                const opts = { upsert: true, new: true, setDefaultsOnInsert: true };
+                const device = await Device.findOneAndUpdate(
+                    filter, 
+                    { $set: update, $setOnInsert: { registrationTimestamp: new Date() } }, 
+                    opts
+                );
+
+                console.log('✅ Device saved:', device.deviceId);
+
+                // Send confirmation back to Android app
+                ws.send(JSON.stringify({ 
+                    status: 'registered',
+                    message: 'Device registered successfully',
+                    deviceData: device
+                }));
+
+                // Emit dashboard update to all web clients
+                if (global.io) {
+                    global.io.emit('dashboard-update', { 
+                        event: 'device-connected',
+                        device: device,
+                        timestamp: new Date()
+                    });
+                    console.log('📊 Dashboard update emitted for device:', deviceId);
                 }
-            } catch (parseErr) {
-                console.log('ℹ️ Message is not JSON, treating as plain text');
+            } else {
+                // Generic acknowledgement for other messages
+                ws.send(JSON.stringify({ 
+                    status: 'ok',
+                    message: 'Message received'
+                }));
             }
             
-            // Broadcast to all connected WebSocket clients
-            wss.clients.forEach((client) => {
-                if (client.readyState === WebSocket.OPEN) {
-                    client.send(JSON.stringify({ 
-                        status: 'ok',
-                        message: 'Message received'
-                    }));
-                }
-            });
         } catch (err) {
             console.error('❌ Error processing message:', err);
+            ws.send(JSON.stringify({ 
+                status: 'error',
+                message: err.message
+            }));
         }
     });
     
-    ws.on('close', () => {
-        console.log('📱 WebSocket disconnected');
+    ws.on('close', async () => {
+        console.log('📱 WebSocket disconnected:', deviceId);
         
-        // Emit dashboard update when device disconnects
-        if (global.io) {
-            global.io.emit('dashboard-update', { 
-                event: 'device-disconnected',
-                timestamp: new Date()
-            });
-            console.log('📊 Dashboard update emitted for device disconnection');
+        // Mark device as offline
+        if (deviceId) {
+            await Device.findOneAndUpdate(
+                { deviceId },
+                { $set: { isOnline: false, lastSeen: new Date() } },
+                { new: true }
+            );
+
+            // Emit dashboard update when device disconnects
+            if (global.io) {
+                global.io.emit('dashboard-update', { 
+                    event: 'device-disconnected',
+                    deviceId: deviceId,
+                    timestamp: new Date()
+                });
+                console.log('📊 Dashboard update emitted for device disconnection:', deviceId);
+            }
         }
     });
     
