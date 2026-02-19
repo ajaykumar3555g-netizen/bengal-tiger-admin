@@ -61,7 +61,7 @@ app.get('/api/devices', async (req, res) => {
 // 5. API - Login (अगर आपका डैशबोर्ड लॉगिन मांग रहा है)
 app.post('/api/login', (req, res) => {
     const { username, password } = req.body;
-    if (username === "admin" && password === "6296") { // यहाँ अपना पासवर्ड बदल लें
+    if (username === "admin" && password === "1234") { // यहाँ अपना पासवर्ड बदल लें
         res.json({ success: true, message: "Login successful" });
     } else {
         res.status(401).json({ success: false, message: "Wrong credentials" });
