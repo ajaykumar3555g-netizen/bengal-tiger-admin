@@ -112,23 +112,31 @@ const io = new Server(server, { cors: { origin: '*' } });
 global.io = io;
 
 // Create WebSocket Server and attach to HTTP server for raw WebSocket connections
-const wss = new WebSocket.Server({ server });
+const wss = new WebSocket.Server({ 
+    server,
+    perMessageDeflate: false,
+    clientTracking: true
+});
 
 // Handle WebSocket connections for Android app
 wss.on('connection', (ws) => {
     console.log('📱 WebSocket connected from Android app');
     
     ws.on('message', (message) => {
-        console.log('📨 WebSocket message received:', message);
-        // Broadcast to all connected clients
-        wss.clients.forEach((client) => {
-            if (client.readyState === WebSocket.OPEN) {
-                client.send(JSON.stringify({ 
-                    status: 'ok',
-                    message: 'Message received'
-                }));
-            }
-        });
+        try {
+            console.log('📨 WebSocket message received:', message);
+            // Broadcast to all connected clients
+            wss.clients.forEach((client) => {
+                if (client.readyState === WebSocket.OPEN) {
+                    client.send(JSON.stringify({ 
+                        status: 'ok',
+                        message: 'Message received'
+                    }));
+                }
+            });
+        } catch (err) {
+            console.error('❌ Error processing message:', err);
+        }
     });
     
     ws.on('close', () => {
@@ -136,8 +144,16 @@ wss.on('connection', (ws) => {
     });
     
     ws.on('error', (error) => {
-        console.error('❌ WebSocket error:', error);
+        console.error('❌ WebSocket error:', error.message);
     });
+});
+
+// Handle server errors
+server.on('clientError', (err, socket) => {
+    console.error('❌ ClientError:', err.message);
+    if (socket.writable) {
+        socket.end('HTTP/1.1 400 Bad Request\r\n\r\n');
+    }
 });
 
 io.on('connection', (socket) => {
@@ -149,4 +165,13 @@ io.on('connection', (socket) => {
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, '0.0.0.0', () => {
     console.log(`🚀 Server is running on port ${PORT}`);
+});
+
+// Handle uncaught errors
+process.on('uncaughtException', (err) => {
+    console.error('❌ Uncaught Exception:', err);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('❌ Unhandled Rejection at:', promise, 'reason:', reason);
 });
