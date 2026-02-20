@@ -186,15 +186,17 @@ app.post('/api/command', async (req, res) => {
         
         // Emit to connected WebSocket clients so device gets the command
         if (result.success) {
-            wss.clients.forEach((client) => {
-                if (client.readyState === WebSocket.OPEN) {
-                    client.send(JSON.stringify({ 
-                        command: action,
-                        deviceId: deviceId,
-                        data: data
-                    }));
-                }
-            });
+            if (global.wss) {
+                global.wss.clients.forEach((client) => {
+                    if (client.readyState === WebSocket.OPEN) {
+                        client.send(JSON.stringify({ 
+                            command: action,
+                            deviceId: deviceId,
+                            data: data
+                        }));
+                    }
+                });
+            }
         }
         
         res.json(result);
@@ -220,6 +222,9 @@ const wss = new WebSocket.Server({
     perMessageDeflate: false,
     clientTracking: true
 });
+
+// Make wss available globally for API routes
+global.wss = wss;
 
 // Handle WebSocket connections for Android app
 wss.on('connection', (ws) => {
