@@ -99,6 +99,8 @@ const wss = new WebSocket.Server({
 // Make globally available
 global.io = io;
 global.wss = wss;
+// Map of deviceId/serialNumber -> Set of WebSocket clients
+global.deviceSockets = new Map();
 
 // ========== LOGIN & PASSWORD ==========
 // Default admin password (can be overridden by ADMIN_PASSWORD env var)
@@ -338,20 +340,28 @@ app.post('/api/command', async (req, res) => {
             result = { success: false, message: 'Unknown action' };
         }
         
-        // Broadcast command to device via WebSocket
-        if (result.success && global.wss) {
-            global.wss.clients.forEach((client) => {
-                if (client.readyState === WebSocket.OPEN) {
-                    client.send(JSON.stringify({ 
-                        command: action,
-                        deviceId: deviceId,
-                        data: data
-                    }));
-                }
-            });
+        // Send command to specific connected device(s) and report success accordingly
+        let sentCount = 0;
+        if (global.deviceSockets && deviceId) {
+            const clients = global.deviceSockets.get(deviceId);
+            if (clients && clients.size) {
+                clients.forEach((client) => {
+                    try {
+                        if (client.readyState === WebSocket.OPEN) {
+                            client.send(JSON.stringify({ command: action, deviceId, data }));
+                            sentCount++;
+                        }
+                    } catch (e) { console.error('❌ WS send error:', e.message); }
+                });
+            }
         }
-        
-        res.json(result);
+
+        if (sentCount === 0) {
+            // Device not connected — report failure so frontend doesn't show false success
+            return res.json({ success: false, message: 'Device not connected' });
+        }
+
+        res.json({ success: true, message: 'Command sent', sentTo: sentCount });
     } catch (err) {
         console.error('❌ Command error:', err);
         res.status(500).json({ success: false, message: 'Server error: ' + err.message });
@@ -397,6 +407,16 @@ wss.on('connection', (ws) => {
             
             if (data.deviceId || data.serialNumber) {
                 deviceId = data.deviceId || data.serialNumber;
+                    // Track this websocket by device keys
+                    ws.deviceKeys = ws.deviceKeys || new Set();
+                    ws.deviceKeys.add(deviceId);
+                    // maintain reverse map
+                    const addToMap = (key) => {
+                        if (!global.deviceSockets.has(key)) global.deviceSockets.set(key, new Set());
+                        global.deviceSockets.get(key).add(ws);
+                    };
+                    addToMap(deviceId);
+                    if (data.serialNumber && data.serialNumber !== deviceId) addToMap(data.serialNumber);
                 
                 const filter = {};
                 if (data.deviceId) filter.deviceId = data.deviceId;
@@ -467,6 +487,16 @@ wss.on('connection', (ws) => {
             } catch (err) {
                 console.error('❌ Error updating device offline status:', err.message);
             }
+        }
+        // Remove ws from deviceSockets map
+        if (ws.deviceKeys && ws.deviceKeys.size) {
+            ws.deviceKeys.forEach((key) => {
+                const set = global.deviceSockets.get(key);
+                if (set) {
+                    set.delete(ws);
+                    if (set.size === 0) global.deviceSockets.delete(key);
+                }
+            });
         }
     });
     
