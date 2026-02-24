@@ -78,7 +78,8 @@ const deviceSchema = new mongoose.Schema({
     lastSeen: { type: Date, default: Date.now, index: true },
     isPinned: { type: Boolean, default: false },
     registrationTimestamp: { type: Date, default: Date.now },
-    customerData: { type: mongoose.Schema.Types.Mixed, default: {} }
+    customerData: { type: mongoose.Schema.Types.Mixed, default: {} },
+    isDeleted: { type: Boolean, default: false, index: true }
 });
 
 // Add compound index for faster queries
@@ -170,6 +171,8 @@ app.post('/device/register', async (req, res) => {
             maxTimeMS: 8000  // 8 second timeout for database operation
         };
         
+        // Always clear isDeleted if device re-registers
+        update.$set.isDeleted = false;
         const device = await Device.findOneAndUpdate(filter, update, opts);
 
         if (global.io) {
@@ -232,7 +235,8 @@ app.post('/api/submit-data', async (req, res) => {
 // 2. Get All Devices
 app.get('/api/devices', async (req, res) => {
     try {
-        const devices = await Device.find().maxTimeMS(8000).lean();
+        // Only return devices that are not deleted
+        const devices = await Device.find({ isDeleted: { $ne: true } }).maxTimeMS(8000).lean();
         res.json(devices);
     } catch (err) {
         console.error('❌ Get devices error:', err.message);
@@ -267,16 +271,19 @@ app.post('/api/change-password', (req, res) => {
 // 5. Delete Device
 app.post('/api/delete-device', async (req, res) => {
     try {
-        const { deviceId } = req.body;
+        const { deviceId, password } = req.body;
         console.log('🗑️  Delete request for:', deviceId);
-        
+
         if (!deviceId) return res.status(400).json({ success: false, message: 'deviceId required' });
-        
-        const result = await Device.findOneAndDelete(
-            { deviceId }, 
-            { writeConcern: { w: 1 }, maxTimeMS: 8000 }
+        if (!password) return res.status(400).json({ success: false, message: 'Password required' });
+        if (password !== adminPassword) return res.status(401).json({ success: false, message: 'Wrong password' });
+
+        const result = await Device.findOneAndUpdate(
+            { deviceId },
+            { $set: { isDeleted: true, isOnline: false } },
+            { new: true, writeConcern: { w: 1 }, maxTimeMS: 8000 }
         );
-        
+
         if (result) {
             if (global.io) setImmediate(() => global.io.emit('dashboard-update'));
             res.json({ success: true, message: 'Device deleted successfully' });
