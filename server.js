@@ -43,7 +43,6 @@ if (MONGO_URI) {
         connectTimeoutMS: 10000,                            // 10s initial connection timeout
         maxPoolSize: 10,                                    // Connection pool size
         minPoolSize: 5,                                     // Min connections to maintain
-        maxServerSelectionAttempts: 3,                      // Retry attempts
         retryWrites: true,                                  // Automatic retry for writes
         waitQueueTimeoutMS: 10000,                          // Queue timeout for connections
         bufferCommands: false,                              // disable op buffering (fail fast)
