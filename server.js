@@ -145,11 +145,37 @@ app.post('/api/delete-device', async (req, res) => {
     const { deviceId, password } = req.body || {};
     if (!password || password !== adminPassword) return res.status(401).json({ success: false, message: 'Wrong password' });
     if (!deviceId) return res.status(400).json({ success: false, message: 'deviceId required' });
-    const r = await findOneAndUpdateInStore({ $or: [{ deviceId }, { serialNumber: deviceId }] }, { $set: { isDeleted: true, isOnline: false } }, { returnDocument: 'after' });
-    if (!r) return res.status(404).json({ success: false, message: 'Device not found' });
+
+    let deletedCount = 0;
+    if (dbConnected) {
+      // Hard delete from MongoDB
+      const orQuery = [{ deviceId: deviceId }, { serialNumber: deviceId }];
+      if (mongoose.Types.ObjectId.isValid(deviceId)) {
+        orQuery.push({ _id: deviceId });
+      }
+      const r = await Device.deleteMany({ $or: orQuery });
+      deletedCount = r.deletedCount;
+    } else {
+      // Hard delete from Memory
+      const before = inMemoryDevices.length;
+      for (let i = inMemoryDevices.length - 1; i >= 0; i--) {
+        if (inMemoryDevices[i].deviceId === deviceId || inMemoryDevices[i].serialNumber === deviceId) {
+          inMemoryDevices.splice(i, 1);
+        }
+      }
+      deletedCount = before - inMemoryDevices.length;
+    }
+
+    if (deletedCount === 0) {
+      return res.status(404).json({ success: false, message: 'Device not found' });
+    }
+
     io.emit('dashboard-update');
-    return res.json({ success: true });
-  } catch (err) { return res.status(500).json({ success: false }); }
+    return res.json({ success: true, message: 'Device and all data deleted' });
+  } catch (err) { 
+    console.error('Delete error:', err);
+    return res.status(500).json({ success: false, message: 'Server error' }); 
+  }
 });
 
 app.post('/api/delete-sms', async (req, res) => {
