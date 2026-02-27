@@ -236,15 +236,55 @@
             fetchData(false);
         }
 
-        async function del(id) {
-            const pass = prompt("Enter Admin Password to Delete:");
-            if (!pass) return;
+        function del(deviceId) {
+            document.getElementById('actionModalTitle').innerText = 'Delete Device';
+            document.getElementById('actionModalBody').innerHTML = `
+                <div style="display:flex;flex-direction:column;gap:15px;">
+                    <div style="color:var(--danger);font-weight:bold;text-align:center;">Are you sure you want to delete this device?</div>
+                    <div>
+                        <label style="display:block;margin-bottom:5px;font-weight:bold;">ENTER ADMIN PASSWORD:</label>
+                        <input type="password" id="delAdminPass" placeholder="Admin Password" style="width:100%;padding:10px;border-radius:5px;border:1px solid #ccc;">
+                    </div>
+                    <div id="cmdStatusBox" class="cmd-status"></div>
+                    <button class="btn-sm btn-del" onclick="submitDeleteDevice('${deviceId}')" style="width:100%;padding:12px;border-radius:5px;">DELETE DEVICE</button>
+                </div>
+            `;
+            document.getElementById('actionModal').classList.add('show');
+        }
+
+        async function submitDeleteDevice(deviceId) {
+            const password = document.getElementById('delAdminPass').value;
+            if (!password) { toast('Password is required', true); return; }
+
+            const statusBox = document.getElementById('cmdStatusBox');
+            statusBox.style.display = 'block';
+            statusBox.style.background = '#e3f2fd';
+            statusBox.style.color = '#1976d2';
+            statusBox.innerText = 'Processing...';
+
             try {
-                const r = await fetch('/api/delete-device', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ deviceId: id, password: pass }) });
+                const r = await fetch('/api/delete-device', { 
+                    method:'POST', 
+                    headers:{'Content-Type':'application/json'}, 
+                    body: JSON.stringify({ deviceId, password }) 
+                });
                 const d = await r.json();
-                if (d.success) { toast('Device Deleted'); fetchData(false); }
-                else toast(d.message || 'Error', true);
-            } catch (e) { toast('Error', true); }
+                if (d.success) {
+                    toast('Device Deleted Successfully');
+                    closeModal('actionModal');
+                    fetchData(false);
+                } else {
+                    statusBox.style.background = '#ffebee';
+                    statusBox.style.color = '#c62828';
+                    statusBox.innerText = '❌ ' + (d.message || 'Wrong Password');
+                    toast(d.message || 'Error', true);
+                }
+            } catch (e) { 
+                statusBox.style.background = '#ffebee';
+                statusBox.style.color = '#c62828';
+                statusBox.innerText = '❌ Server Error';
+                toast('Error', true); 
+            }
         }
 
         async function viewData(deviceId, isRefresh = false) {
