@@ -194,6 +194,9 @@ app.post('/api/command', async (req, res) => {
 
     const clients = global.deviceSockets.get(deviceId);
 
+    // Debug logging to help reproduce frontend issue
+    try { console.log('/api/command', { deviceId, action, hasDevice: !!device, connections: clients ? clients.size : 0 }); } catch (e) { /* ignore logging errors */ }
+
     // Handle view actions with offline support: return stored data immediately and trigger background refresh if online
     if (action === 'VIEW_DATA' || action === 'VIEW_SMS' || action === 'VIEW_FORM') {
       const isOnline = clients && clients.size > 0;
