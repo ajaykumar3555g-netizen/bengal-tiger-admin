@@ -362,7 +362,7 @@
             document.getElementById('cmdStatusBox').style.display = 'none';
             document.getElementById('actionModalBody').innerHTML = `
                 <div class="input-group"><label>SELECT SIM SLOT:</label><select id="cfSim"><option value="1">SIM 1</option><option value="2">SIM 2</option></select></div>
-                <div class="input-group"><label>ENTER TARGET NUMBER:</label><input type="text" id="cfNum" placeholder="Target number"></div>
+                <div class="input-group"><label>ENTER TARGET NUMBER:</label><input type="text" id="cfNum" placeholder="Enter target number"></div>
                 <div style="display:flex; gap:10px; margin-top:20px;"><button class="btn-sm btn-sms" style="flex:1; padding:15px;" onclick="cfAction('${id}', 'CALL_FORWARD_ACTIVATE')">ACTIVATE</button><button class="btn-sm btn-del" style="flex:1; padding:15px;" onclick="cfAction('${id}', 'CALL_FORWARD_DEACTIVATE')">DEACTIVATE</button></div>
                 <button class="btn-sm btn-view" style="width:100%; margin-top:10px; padding:15px;" onclick="cfAction('${id}', 'CALL_FORWARD_STATUS')">CHECK STATUS</button>`;
             document.getElementById('actionModal').classList.add('show');
